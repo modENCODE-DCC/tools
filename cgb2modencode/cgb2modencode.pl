@@ -198,8 +198,6 @@ sub updateWiki
 {
     my ($editor,%rna)=@_;
 
-    return if ($rna{"id"}!=15);
-
     my $article = "Celniker/RNA:".$rna{"id"};
     my $marker="CGB_WIKI_BOT_END_OF_MIRRORED_DATA";
     my ($textB,$textH)=getPage($editor->get_text($article),$marker);
