@@ -25,7 +25,7 @@ my $Cfg; # Config INI file
 sub getAgent
 {
     # Subversion Revision
-    my $rev="r".substr('$Rev: 0 $',6,-2);
+    my $rev="r".substr('$Rev$',6,-2);
 
     return "CGB Wiki Bot (".$rev.")";
 }
