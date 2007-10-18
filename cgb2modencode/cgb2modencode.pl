@@ -9,15 +9,13 @@ use strict;
 use lib::Perlwikipedia;
 use Config::IniFiles;
 
-# DEBUG On/Off
-# (also affects the caching of the source)
-my $Debug=0;
-
 #
 # Global variables
 #
 
+my $Debug; # Debug on/off
 my $Cfg; # Config INI file
+my $Mech; # Needs to be global to preserve the cookie Jar
 
 #
 # Returns a UserAgent string (for logging purpose)
@@ -33,24 +31,13 @@ sub getAgent
 #
 # Connect and read main page from source
 #
-sub getSourceContent
+sub connectAndGetSourceContent
 {
-    my $cache="/tmp/CACHE.html";
+    $Mech=WWW::Mechanize->new("agent" => getAgent());
+    $Mech->get("https://".$Cfg->val("source","hostname")."/".
+            $Cfg->val("source","path"));
 
-    if ($Debug && (-f $cache))
-    {
-        print "Loading data from cache\n";
-        open(F,"<".$cache);
-        my @sourceContent=<F>;
-        close(F);
-        chomp(@sourceContent);
-        return @sourceContent;
-    }
-
-    my $mech=WWW::Mechanize->new("agent" => getAgent());
-    $mech->get($Cfg->val("source","url"));
-
-    $mech->submit_form(
+    $Mech->submit_form(
             form_number =>2,
             fields      => {
             os_username => $Cfg->val("source","username"),
@@ -58,17 +45,19 @@ sub getSourceContent
             }
             );
 
-    my $sourceContent=$mech->content();
+    return split(/\n/,$Mech->content());
+}
 
-    if ($Debug)
-    {
-        print "Retrieved data from CGB server\n";
-        open(F,">".$cache);
-        print F $sourceContent;
-        close(F);
-    }
+#
+# read a page from server
+#
+sub getContent
+{
+    my ($page)=@_;
 
-    return split(/\n/,$sourceContent);
+    $Mech->get("https://".$Cfg->val("source","hostname").$page);
+    return split(/\n/,$Mech->content());
+
 }
 
 #
@@ -85,9 +74,9 @@ sub getWikiConnection
 }
 
 #
-# Parse source and update wiki as needed
+# Parse source of main page
 #
-sub parseSource
+sub parseSourceMain
 {
     my @sourceContent=@_;
 
@@ -143,14 +132,12 @@ sub parseSource
             $rna{"qc"}=();
             foreach my $qc (split(/,/))
             {
-                $qc =~ tr /+/ /;
-                ###/ vim bug ###
-            
-                if ($qc =~ / <a href="\/display\/modencode\/([^"]+)" /)
+                if ($qc =~ m|<a href="(/display/modencode/[^\"]+)"[^>]+>([^<]+)</a>|)
                 {
-                    die("QC (protocols):".$1." not defined")
-                                       unless ($Cfg->val("protocols",$1));
-                    push(@{$rna{"protocols"}},$Cfg->val("protocols",$1));
+                    push(@{$rna{"qcdata"}},$1);
+                    die("QC (protocols):".$2." not defined")
+                                       unless ($Cfg->val("protocols",$2));
+                    push(@{$rna{"protocols"}},$Cfg->val("protocols",$2));
                 }
             }
         }
@@ -159,6 +146,45 @@ sub parseSource
     push(@RNASources,{%rna}) if ($rna{"id"});
 
     return @RNASources;
+}
+
+#
+# Parse source of QC Data page (to locate the image)
+#
+sub parseSourceQCData
+{
+    my $wikiContent=0;
+
+    foreach (@_)
+    {
+        if ($wikiContent==0)
+        {
+            $wikiContent=1 if (m|<div class="wiki-content">|);
+            next;
+        }
+
+        return $1 if (m|<img src="(/download/attachments/[^\"]+)" align="absmiddle" border="0" />|); #/ (for Vim bug)
+    }
+    die("Can't locate image in QC Data page ");
+}
+
+
+#
+# Retrieve Images from QC Data pages
+#
+sub retrieveQCImages
+{
+    my @listQCPages=@_;
+
+    my %QCImages=();
+    foreach my $qc (@listQCPages)
+    {
+        my $image_url=parseSourceQCData(getContent($qc));
+        $image_url=substr($image_url,rindex($image_url,"/")+1);
+        $image_url =~ tr/ /_/;
+        $QCImages{$qc}=$image_url;
+    }
+    return %QCImages;
 }
 
 #
@@ -196,7 +222,7 @@ sub getPage
 #
 sub updateWiki
 {
-    my ($editor,%rna)=@_;
+    my ($editor,$qcImages,%rna)=@_;
 
     my $article = "Celniker/RNA:".$rna{"id"};
     my $marker="CGB_WIKI_BOT_END_OF_MIRRORED_DATA";
@@ -215,6 +241,13 @@ sub updateWiki
     $text.="'''Cell type:''' [[".$rna{"celltype"}."]]\n\n" if ($rna{"celltype"});
     $text.="'''Cell type:''' ".$rna{"sample"}."\n\n" if ($rna{"sample"});
     $text.="'''Notes:'''\n\n";
+    $text.="'''QC data:'''\n\n";
+    foreach my $p (@{$rna{"qcdata"}})
+    {
+        my $proto=substr($p,rindex($p,"/")+1);
+        $proto =~ tr /+/ /; #/ (for Vim bug)
+        $text.="*[[Image:".$$qcImages{$p}."|".$proto."]]\n";
+    }
 
     print $article.": ".(($text eq $textB)? "No change" : "update").
         " needed\n" if ($Debug);
@@ -223,7 +256,7 @@ sub updateWiki
 
     $text.="<!-- ".$marker." DO NOT EDIT ABOVE THIS LINE! -->\n";
 
-    $textH="= Local data =\n";
+    $textH="= Comments =\n";
     $text.=$textH;
 
     $editor->edit($article, $text,"Synchronisation by ".getAgent());
@@ -262,14 +295,24 @@ sub updateWikiIndex
 
 ####
 $Cfg=new Config::IniFiles("-file" => "cgb-wiki-bot.ini");
-my @RNASources=parseSource(getSourceContent());
+$Debug=($Cfg->val("general","debug")==1);
+my @RNASources=parseSourceMain(connectAndGetSourceContent());
+
+# Extract the QC Pages and build a list
+my %listQCPages=();
+foreach (@RNASources)
+{
+    $listQCPages{@{$$_{"qcdata"}}[0]}=1 if ($$_{"qcdata"});
+}
+
+my %QCImages=retrieveQCImages(keys %listQCPages);
 
 my $editor=getWikiConnection();
 
 # Update Invidual RNA page
 foreach (@RNASources)
 {
-    updateWiki($editor,%$_);
+    updateWiki($editor,\%QCImages,%$_);
 }
 
 # Update Index
