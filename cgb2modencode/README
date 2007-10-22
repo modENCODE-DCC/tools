@@ -4,6 +4,7 @@
 - PERL
 - Perlwikipedia ( http://code.google.com/p/perlwikipedia/ )
 - Config::IniFiles (CPAN)
+- Crypt::SSLeay (CPAN)
 
 * Configuration
 

@@ -6,8 +6,9 @@
 # Licence TBC
 
 use strict;
-use lib::Perlwikipedia;
+use Perlwikipedia;
 use Config::IniFiles;
+use XML::Simple;
 
 #
 # Global variables
@@ -31,7 +32,7 @@ sub getAgent
 #
 # Connect and read main page from source
 #
-sub connectAndGetSourceContent
+sub connectCGBAndGetSourceContent
 {
     $Mech=WWW::Mechanize->new("agent" => getAgent());
     $Mech->get("https://".$Cfg->val("source","hostname")."/".
@@ -51,12 +52,12 @@ sub connectAndGetSourceContent
 #
 # read a page from server
 #
-sub getContent
+sub getCGBContent
 {
     my ($page)=@_;
 
     $Mech->get("https://".$Cfg->val("source","hostname").$page);
-    return split(/\n/,$Mech->content());
+    return $Mech->content();
 
 }
 
@@ -153,9 +154,11 @@ sub parseSourceMain
 #
 sub parseSourceQCData
 {
+    my ($cgbContent)=@_;
+
     my $wikiContent=0;
 
-    foreach (@_)
+    foreach (split(/\n/,$cgbContent))
     {
         if ($wikiContent==0)
         {
@@ -168,6 +171,55 @@ sub parseSourceQCData
     die("Can't locate image in QC Data page ");
 }
 
+#
+# Cut & Normalise the image path => name
+#
+sub imagePathToName
+{
+    my ($path)=@_;
+
+    my $name=substr($path,rindex($path,"/")+1);
+    $name =~ tr/ /_/;
+
+    return $name;
+}
+
+#
+# Transfer images from CGB to Wiki
+#
+sub transferImages
+{
+    my $editor=shift;
+
+    foreach (@_)
+    {
+        my $name=imagePathToName($_);
+        my $filename="cache/".$name;
+        print "Downloading ".$name."\n" if ($Debug);
+        my $img=getCGBContent($_);
+        open(F,">".$filename);
+        print F $img;
+        close(F);
+
+        (length($img) == (-s $filename)) ||
+            die ("Error during download of '".imagePathToName($_)."'\n");
+
+        print "uploading ".$name."\n" if ($Debug);
+
+        # Big Hack!!!
+        # Emulating a _post_api method as Perlwikipedia doesn't provide
+        # anything like this (yet).
+        # See http://www.mediawiki.org/wiki/API:Edit_-_Uploading_files
+
+        $editor->{mech}->get("http://".$editor->{host}."/".
+                $editor->{path}."/index.php/Special:Upload");
+
+        $editor->{mech}->form_number(1);
+        $editor->{mech}->set_fields("wpUploadFile" => $filename);
+        $editor->{mech}->tick("wpIgnoreWarning","true");
+        $editor->{mech}->click_button("name" => "wpUpload");
+    }
+}
 
 #
 # Retrieve Images from QC Data pages
@@ -179,12 +231,37 @@ sub retrieveQCImages
     my %QCImages=();
     foreach my $qc (@listQCPages)
     {
-        my $image_url=parseSourceQCData(getContent($qc));
-        $image_url=substr($image_url,rindex($image_url,"/")+1);
-        $image_url =~ tr/ /_/;
-        $QCImages{$qc}=$image_url;
+        $QCImages{$qc}=parseSourceQCData(getCGBContent($qc));
     }
     return %QCImages;
+}
+
+#
+# Check if images were already transfered
+#
+sub getImagesNotInWiki
+{
+    my ($editor,@QCImages)=@_;
+
+    my (@imagesToTransfer)=();
+
+    foreach (@QCImages)
+    {
+        # Hack!!!
+        # Calling directly the _get_api method as Perlwikipedia doesn't provide
+        # anything better (yet).
+        my $res=$editor->_get_api("action=query&prop=revisions&titles=Image:".
+                imagePathToName($_)."&format=xml");
+        next unless ($res);
+
+        my $xml=XMLin($res->decoded_content);
+        unless ($xml->{query}->{pages}->{page}->{revisions})
+        {
+            push(@imagesToTransfer,$_);
+        }
+    }
+
+    return @imagesToTransfer;
 }
 
 #
@@ -246,7 +323,7 @@ sub updateWiki
     {
         my $proto=substr($p,rindex($p,"/")+1);
         $proto =~ tr /+/ /; #/ (for Vim bug)
-        $text.="*[[Image:".$$qcImages{$p}."|".$proto."]]\n";
+        $text.="*[[Image:".imagePathToName($$qcImages{$p})."|".$proto."]]\n";
     }
 
     print $article.": ".(($text eq $textB)? "No change" : "update").
@@ -293,10 +370,9 @@ sub updateWikiIndex
 
 }
 
-####
 $Cfg=new Config::IniFiles("-file" => "cgb-wiki-bot.ini");
 $Debug=($Cfg->val("general","debug")==1);
-my @RNASources=parseSourceMain(connectAndGetSourceContent());
+my @RNASources=parseSourceMain(connectCGBAndGetSourceContent());
 
 # Extract the QC Pages and build a list
 my %listQCPages=();
@@ -312,11 +388,17 @@ my $editor=getWikiConnection();
 # Update Invidual RNA page
 foreach (@RNASources)
 {
-    updateWiki($editor,\%QCImages,%$_);
+#    updateWiki($editor,\%QCImages,%$_);
 }
 
 # Update Index
-updateWikiIndex($editor,@RNASources);
+#updateWikiIndex($editor,@RNASources);
+
+# Transfer Images
+my @imagesToTransfer=getImagesNotInWiki($editor,values %QCImages);
+
+transferImages($editor,@imagesToTransfer);
+
 
 # Clean exit
 exit(0);

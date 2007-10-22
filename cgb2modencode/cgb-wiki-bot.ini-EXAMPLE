@@ -1,5 +1,10 @@
+[general]
+debug=0
+
 [source]
-url=https://ZZZZZZZZZZZZZZZZZ
+# https://HOSTNAME/PATH
+hostname=ZZZZ
+path=/display/modencode/RNA+sources
 username=ZZZZ
 password=ZZZZ
 
