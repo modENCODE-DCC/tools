@@ -388,11 +388,11 @@ my $editor=getWikiConnection();
 # Update Invidual RNA page
 foreach (@RNASources)
 {
-#    updateWiki($editor,\%QCImages,%$_);
+    updateWiki($editor,\%QCImages,%$_);
 }
 
 # Update Index
-#updateWikiIndex($editor,@RNASources);
+updateWikiIndex($editor,@RNASources);
 
 # Transfer Images
 my @imagesToTransfer=getImagesNotInWiki($editor,values %QCImages);
