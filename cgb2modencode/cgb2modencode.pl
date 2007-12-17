@@ -254,7 +254,10 @@ sub getImagesNotInWiki
                 imagePathToName($_)."&format=xml");
         next unless ($res);
 
-        my $xml=XMLin($res->decoded_content);
+        my $s=$res->decoded_content;
+        $s =~ s/^\s+//;
+
+        my $xml=XMLin($s);
         unless ($xml->{query}->{pages}->{page}->{revisions})
         {
             push(@imagesToTransfer,$_);
