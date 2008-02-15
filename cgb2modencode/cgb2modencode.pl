@@ -17,6 +17,11 @@ use XML::Simple;
 my $Debug; # Debug on/off
 my $Cfg; # Config INI file
 my $Mech; # Needs to be global to preserve the cookie Jar
+my %Formfields = (
+    "RNA ID" => 'id',
+    "Biosample #" => 'biosample',
+    "Cell Type" => 'celltype',
+);
 
 #
 # Returns a UserAgent string (for logging purpose)
@@ -35,14 +40,14 @@ sub getAgent
 sub connectCGBAndGetSourceContent
 {
     $Mech=WWW::Mechanize->new("agent" => getAgent());
-    $Mech->get("https://".$Cfg->val("source","hostname")."/".
+    my $res = $Mech->get("https://".$Cfg->val("source","hostname")."/".
             $Cfg->val("source","path"));
 
     $Mech->submit_form(
-            form_number =>2,
+            form_name =>   "loginform",
             fields      => {
-            os_username => $Cfg->val("source","username"),
-            os_password => $Cfg->val("source","password"),
+              os_username => $Cfg->val("source","username"),
+              os_password => $Cfg->val("source","password"),
             }
             );
 
@@ -87,6 +92,7 @@ sub parseSourceMain
 
     foreach (@sourceContent)
     {
+
         # Filtering & extraction from "Frame"
         next unless (m|<td class='confluenceTd'>(.+)</td>|);
         $_=$1;
@@ -108,14 +114,13 @@ sub parseSourceMain
             next;
         }
 
-        if ((/ rel="nofollow">([^<]+)<sup>/) && ($relLine==2))
-        {
+        if ((/ rel="nofollow">([^<]+)<sup>/) && ($relLine==2)) {
             $rna{"celltype"}=$1;
             $rna{"celltype"} =~ s/&#43;/+/;
             next;
-        } elsif ($relLine==2)
-        {
+        } elsif ($relLine==2) {
             $rna{"sample"}=$_;
+            $rna{"celltype"}=$_;
             next;
         }
 
@@ -309,17 +314,23 @@ sub updateWiki
     my ($textB,$textH)=getPage($editor->get_text($article),$marker);
 
     my $text="= Mirrored data =\n\n";
-    $text.="'''RNA ID:''' ".$rna{"id"}."\n\n";
-    $text.="'''Biosample:''' ".$rna{"biosample"}."\n\n";
-    $text.="'''Protocols:'''\n\n";
+    $text .= getDBFieldsFormText();
+    $text .= "==More information==\n";
+    $text.="'''Referenced Protocols:'''\n\n";
     foreach my $p (@{$rna{"protocols"}})
     {
         $text.="*[[".$p."]]\n";
     }
     $text.="\n";
 
+    # Leave this in, but commented, so we can tell when we need to update the form fields
+    $text .= "<!--\n";
+    $text.="'''RNA ID:''' ".$rna{"id"}."\n\n";
+    $text.="'''Biosample:''' ".$rna{"biosample"}."\n\n";
     $text.="'''Cell type:''' [[".$rna{"celltype"}."]]\n\n" if ($rna{"celltype"});
     $text.="'''Cell type:''' ".$rna{"sample"}."\n\n" if ($rna{"sample"});
+    $text .= "-->\n";
+
     $text.="'''Notes:'''\n\n";
     $text.="'''QC data:'''\n\n";
     foreach my $p (@{$rna{"qcdata"}})
@@ -329,9 +340,9 @@ sub updateWiki
         $text.="*[[Image:".imagePathToName($$qcImages{$p})."|".$proto."]]\n";
     }
 
-    print $article.": ".(($text eq $textB)? "No change" : "update").
-        " needed\n" if ($Debug);
+    print $article . ": ". (($text eq $textB)? "No change" : "update") . " needed\n" if ($Debug);
 
+    # Don't do any updates if the text is identical
     return if ($text eq $textB);
 
     $text.="<!-- ".$marker." DO NOT EDIT ABOVE THIS LINE! -->\n";
@@ -340,6 +351,39 @@ sub updateWiki
     $text.=$textH;
 
     $editor->edit($article, $text,"Synchronisation by ".getAgent());
+    setFormData($article, $editor, %rna);
+}
+
+#
+# Set the values of a DBFields wiki form
+#
+sub setFormData {
+    my ($article, $editor, %rna) = @_;
+    print "Updating form data for " . $rna{'id'} . ".\n" if $Debug;
+    my %formdata = map { 'modENCODE_dbfields[' . $_ . ']' => $rna{$Formfields{$_}} } keys(%Formfields);
+    $editor->{mech}->get("http://" . $editor->{host}."/" . $editor->{path}."/index.php?title=$article");
+    $editor->{mech}->submit_form(
+        'form_number' => 1,
+        'fields' => \%formdata,
+    );
+}
+
+#
+# Get the text to generate a DBFields form.
+#
+sub getDBFieldsFormText {
+  my @formfields = keys(%Formfields);
+  my $text = "<dbfields prefix=\"RNA\">\n";
+  $text .= "  <table>\n";
+  foreach my $formfield (@formfields) {
+    $text .= "    <tr>\n";
+    $text .= "      <th><label for=\"$formfield\">$formfield:</label></th>\n";
+    $text .= "      <td><input type=\"text\" name=\"$formfield\" id=\"$formfield\"/></td>\n";
+    $text .= "    </tr>\n";
+  }
+  $text .= "  </table>\n";
+  $text .= "</dbfields>\n";
+  return $text;
 }
 
 #
@@ -384,8 +428,10 @@ foreach (@RNASources)
     $listQCPages{@{$$_{"qcdata"}}[0]}=1 if ($$_{"qcdata"});
 }
 
+print "Getting QC images\n" if $Debug;
 my %QCImages=retrieveQCImages(keys %listQCPages);
 
+print "Getting wiki connection\n" if $Debug;
 my $editor=getWikiConnection();
 
 # Update Invidual RNA page
