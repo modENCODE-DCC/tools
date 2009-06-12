@@ -1,11 +1,18 @@
 #!/usr/bin/perl -w
 
-# Contact: lh3
-# Version: 0.1.1
 # this script is going to make certain assumptions:
 # 1. file has paired-reads
 # 2. reads are always paired
 # 3. there are no multi-matches
+# 4. mates are always on the same chromosome
+# 5. assuming using UCSC coords which are 0-based, but 
+#    SAM needs 1-based coords, so +1 added to start positions.
+
+# this script requires that the file be sorted on the read name,
+# hence 'sort' is called on the input bowtie files
+
+# this script needs to be updated so that multiple matches can be 
+# accommodated properly
 
 ## SJC: Generic debug variable and print.
 my $DEBUG = 1;
@@ -91,7 +98,7 @@ sub process_file {
     $last = '';
     my $line1 = shift @buffer;
     chomp($line1);
-    #print "LINE1 (" . $line_count . "): $line1\n";
+
     my @t1 = split(/\t/, $line1);
     $t1[0] =~ s/\/[12]$//;
     
@@ -102,11 +109,11 @@ sub process_file {
     $t2[0] =~ s/\/[12]$//;
     
     my ($name1, $nm1, $name2, $nm2) = &bowtie2sam_paired($line1, \@read1, $line2, \@read2); # read_name, number of mismatches, read_object
-    #print STDERR"LINE $lines_read/${$lines_written}: " . join("\t", @read1) .  "\n";
+
     print join("\t", @read1) .  "\n";
     ${$lines_written}++;
     if ($t1[0]=~ $t2[0]) {
-	#print STDERR "LINE $lines_read/${$lines_written} " . join("\t", @read2) .  "\n"; 
+
 	print join("\t", @read2) .  "\n"; 
 	${$lines_written}++;
 	#kvetch("___are same");
@@ -170,12 +177,11 @@ sub bowtie2sam_paired {
   $s2->[1] += 0x10 if ($t2[1] eq '-');  #strand of query
   
   if ((split(/\/[12]$/,$ret1))[0] =~ (split(/\/[12]$/,$ret2))[0]) {
-      #there's mates!
+      # there's mates!
+      
       # mate coordinate
-
       $s1->[1] += 0x20 if ($t2[1] eq '-');  #strand of mate
       $s2->[1] += 0x20 if ($t1[1] eq '-');  #strand of mate
-
 
       my $pair_start = $t1[1] =~ /\+/ ? $s1->[3] : $s2->[3];
       my $pair_end = 0;
@@ -184,7 +190,7 @@ sub bowtie2sam_paired {
 	  my @temp = split(/\D/,$cigar);
 	  my $dist = 0;
 	  my $i = 0;
-	  #print "cigar parts: $cigar - " . join(" ", @temp) ;
+
 	  while ($i < @temp) {
 	      my $t = pop(@temp);
 	      $dist += $t if ($t =~ /\d+/); 
@@ -196,17 +202,15 @@ sub bowtie2sam_paired {
 	  my @temp = split(/\D/,$cigar);
 	  my $dist = 0;
 	  my $i = 0;
-	  #print "cigar parts: $cigar - " . join(" ", @temp) ;
+
 	  while ($i < @temp) {
 	      my $t = pop(@temp);
 	      $dist += $t if ($t =~ /\d+/); 
 	      $i++;
 	  }
-	  #print "dist = " . $dist . "\n";
 	  $pair_end = $s2->[3]+$dist;
       }
       my $isize = abs($pair_end - $pair_start);
-      #print "start: $pair_start end $pair_end isize: $isize \n";
       
       $s1->[6] = $s2->[6] = '=';
       $s1->[7] = $s2->[3];
@@ -279,7 +283,7 @@ sub get_cigar {
     if (@c==1) {
 	$cigar = $read_length . "M";
     } else {
-	#its a junction read
+	#its a junction read like this:
 	#dm3_chr4_162722_162753_+>dm3_chr4_162825_162856_+_A
 	my $fiveprimejxn_start = $c[2]+1;
 	my $fiveprimejxn_end   = $c[3];
@@ -298,7 +302,7 @@ sub get_chrom_and_start {
 
     my ($chrom, $start) = @_;
     my @c = split("_", $chrom);
-    $start++;  #dm3 coords are 0-based
+    $start++;  #dm3 coords are 0-based, but we need 1-based
     if (length(@c)>1) {
 	#there's a junction read
 	#assuming that junctions are same chrom
