@@ -66,25 +66,20 @@ sub bowtie2sam {
   print STDERR "there are " . $lines_in_file . " lines in the file \"" . $file . "\"\n";
   print STDERR "Converting...\n";
   while (<>) {
+      $lines_read++;
       #print STDERR "buffer size after $lines_read is " . ($#buffer+1) . "\n";
       if ($#buffer+1 < 3) {
 	  if (($lines_read)<$lines_in_file) {
 	      push @buffer, $_;
-	      $lines_read++;
 	      next;
-	  } else {
-	      #continue;
 	  }
-      } else {
       }
-	  #print STDERR "Buffer at line $lines_read: ( " . ($#buffer+1) . "lines)\n" . join("\n", @buffer);
 	  push @buffer, $_;
-	  $lines_read++;
 
       &process_file($lines_read, \$lines_written, $lines_in_file);
   }
   #clear out buffer
-  while ($#buffer+1>0) {
+  while (@buffer > 0) {
       &process_file($lines_read, \$lines_written, $lines_in_file);
   }
   #untie @filearray;
@@ -98,33 +93,33 @@ sub process_file {
     $last = '';
     my $line1 = shift @buffer;
     chomp($line1);
-
     my @t1 = split(/\t/, $line1);
     $t1[0] =~ s/\/[12]$//;
     
-    my $line2 = shift @buffer;
-    chomp($line2);
+
     my @t2 = ();
-    @t2 = split(/\t/, $line2);
-    $t2[0] =~ s/\/[12]$//;
+    my $line2 = "";
+    if ($#buffer > 0) {
+
+	$line2 = shift @buffer;
+	chomp($line2);
+	@t2 = split(/\t/, $line2);
+	$t2[0] =~ s/\/[12]$//;
+    }
     
     my ($name1, $nm1, $name2, $nm2) = &bowtie2sam_paired($line1, \@read1, $line2, \@read2); # read_name, number of mismatches, read_object
 
     print join("\t", @read1) .  "\n";
     ${$lines_written}++;
-    if ($t1[0]=~ $t2[0]) {
+    if ($line2 ne "") {
+	if ($t1[0]=~ $t2[0]) {
+	    print join("\t", @read2) .  "\n"; 
+	    ${$lines_written}++;
 
-	print join("\t", @read2) .  "\n"; 
-	${$lines_written}++;
-	#kvetch("___are same");
-    } else {
-	unshift @buffer, $line2;
-	#print STDERR "unmated read found at line $lines_written\n"
-    }
-    if (($lines_read)>=$lines_in_file) {
-	last;
-    } else {
-	
+	} else {
+	    unshift @buffer, $line2 if ($line2 ne "");
+	    #print STDERR "unmated read found at line $lines_written\n"
+	}
     }
     print STDERR "processed $lines_read reads " . "\n" if ($lines_read % 50000 == 0);
 }
@@ -136,8 +131,10 @@ sub bowtie2sam_paired {
   chomp($line2);
   my @t1 = split("\t", $line1);
   my @t2 = split("\t", $line2);
-  my $ret1;
-  my $ret2;
+  my $ret1 = "";
+  my $ret2 = "";
+  my $nm2 = "";
+  my $nm1 = "";
   @$s1 = ();
   @$s2 = ();
 
@@ -147,11 +144,11 @@ sub bowtie2sam_paired {
 
   # read name
   $s1->[1] = ($t1[0] =~ /\/1$/) ? 0x40 : 0x80;
-  $s2->[1] = ($t2[0] =~ /\/1$/) ? 0x40 : 0x80;
+  $s2->[1] = ($t2[0] =~ /\/1$/) ? 0x40 : 0x80 if ($line2 ne "");
   #$s1->[1] = 0x40 if ($t1[0] =~ /\/1$/);
   #$s2->[1] = 0x80 if ($s2->[0] =~ /\/2$/);
   $ret1 = $t1[0];
-  $ret2 = $t2[0];
+  $ret2 = $t2[0] if ($line2 ne "");
   my $name = $t1[0]; 
   $name =~ s/\/[12]$//;
   $s1->[0] = $s2->[0] = $name;
@@ -161,78 +158,85 @@ sub bowtie2sam_paired {
   #$s->[2] = get_start($t[2]);
   #$s->[3] = $t[3] + 1;
   ($s1->[2],$s1->[3]) = get_chrom_and_start($t1[2],$t1[3]);
-  ($s2->[2],$s2->[3]) = get_chrom_and_start($t2[2],$t2[3]);
+  ($s2->[2],$s2->[3]) = get_chrom_and_start($t2[2],$t2[3]) if ($line2 ne "");
   
   # read & quality
   $s1->[9] = $t1[4]; $s1->[10] = $t1[5];
-  $s2->[9] = $t2[4]; $s2->[10] = $t2[5];
+  $s2->[9] = $t2[4] if ($line2 ne ""); $s2->[10] = $t2[5] if ($line2 ne "");
   
   # cigar
   #$s->[5] = length($s->[9]) . "M";
   $s1->[5] = get_cigar($t1[3],$s1->[9],$t1[2]);
-  $s2->[5] = get_cigar($t2[3],$s2->[9],$t2[2]);
+  $s2->[5] = get_cigar($t2[3],$s2->[9],$t2[2]) if ($line2 ne "");
   
   #strandedness
   $s1->[1] += 0x10 if ($t1[1] eq '-');  #strand of query
-  $s2->[1] += 0x10 if ($t2[1] eq '-');  #strand of query
-  
-  if ((split(/\/[12]$/,$ret1))[0] =~ (split(/\/[12]$/,$ret2))[0]) {
-      # there's mates!
-      
-      # mate coordinate
-      $s1->[1] += 0x20 if ($t2[1] eq '-');  #strand of mate
-      $s2->[1] += 0x20 if ($t1[1] eq '-');  #strand of mate
-
-      my $pair_start = $t1[1] =~ /\+/ ? $s1->[3] : $s2->[3];
-      my $pair_end = 0;
-      if ($t1[1] =~ /\-/) {
-	  my $cigar = $s1->[5];
-	  my @temp = split(/\D/,$cigar);
-	  my $dist = 0;
-	  my $i = 0;
-
-	  while ($i < @temp) {
-	      my $t = pop(@temp);
-	      $dist += $t if ($t =~ /\d+/); 
-	      $i++;
+  if ($line2 ne "") {  #strand of query
+      $s2->[1] += 0x10 if ($t2[1] eq '-'); 
+      if ((split(/\/[12]$/,$ret1))[0] =~ (split(/\/[12]$/,$ret2))[0]) {
+	  # there's mates!
+	  
+	  # mate coordinate
+	  $s1->[1] += 0x20 if ($t2[1] eq '-');  #strand of mate
+	  $s2->[1] += 0x20 if ($t1[1] eq '-');  #strand of mate
+	  
+	  my $pair_start = $t1[1] =~ /\+/ ? $s1->[3] : $s2->[3];
+	  my $pair_end = 0;
+	  if ($t1[1] =~ /\-/) {
+	      my $cigar = $s1->[5];
+	      my @temp = split(/\D/,$cigar);
+	      my $dist = 0;
+	      my $i = 0;
+	      
+	      while ($i < @temp) {
+		  my $t = pop(@temp);
+		  $dist += $t if ($t =~ /\d+/); 
+		  $i++;
+	      }
+	      $pair_end = $s1->[3]+$dist;
+	  } else {
+	      my $cigar = $s2->[5];
+	      my @temp = split(/\D/,$cigar);
+	      my $dist = 0;
+	      my $i = 0;
+	      
+	      while ($i < @temp) {
+		  my $t = pop(@temp);
+		  $dist += $t if ($t =~ /\d+/); 
+		  $i++;
+	      }
+	      $pair_end = $s2->[3]+$dist;
 	  }
-	  $pair_end = $s1->[3]+$dist;
-      } else {
-	  my $cigar = $s2->[5];
-	  my @temp = split(/\D/,$cigar);
-	  my $dist = 0;
-	  my $i = 0;
-
-	  while ($i < @temp) {
-	      my $t = pop(@temp);
-	      $dist += $t if ($t =~ /\d+/); 
-	      $i++;
+	  my $isize = abs($pair_end - $pair_start);
+	  
+	  $s1->[6] = $s2->[6] = '=';
+	  $s1->[7] = $s2->[3];
+	  $s2->[7] = $s1->[3];
+	  
+	  if ($s1->[3] < $s2->[3]) {
+	      $s1->[8] = $isize;
+	      $s2->[8] = $isize*(-1);
+	  } else {
+	      $s1->[8] = $isize*(-1);
+	      $s2->[8] = $isize;
 	  }
-	  $pair_end = $s2->[3]+$dist;
-      }
-      my $isize = abs($pair_end - $pair_start);
-      
-      $s1->[6] = $s2->[6] = '=';
-      $s1->[7] = $s2->[3];
-      $s2->[7] = $s1->[3];
-      
-      if ($s1->[3] < $s2->[3]) {
-	  $s1->[8] = $isize;
-	  $s2->[8] = $isize*(-1);
+	  $nm2 = &some_processing(\@t2,\@$s2);  #only print the mate if paired
       } else {
-	  $s1->[8] = $isize*(-1);
-	  $s2->[8] = $isize;
+	  #for unpaired
+	  #print "UNPAIRED! at $line_count\n";
+	  $s1->[6] = $s2->[6] = '*'; 
+	  $s1->[7] = $s1->[8] = $s2->[7] = $s2->[8] = 0;
+	  $s1->[1] += 0x08;
       }
   } else {
+      #also unpaired, but the last line in the file
       #for unpaired
       #print "UNPAIRED! at $line_count\n";
       $s1->[6] = $s2->[6] = '*'; 
       $s1->[7] = $s1->[8] = $s2->[7] = $s2->[8] = 0;
       $s1->[1] += 0x08;
   }
-  my $nm1 = &some_processing(\@t1,\@$s1);
-  my $nm2 = &some_processing(\@t2,\@$s2);  #only print the mate if paired
-
+  $nm1 = &some_processing(\@t1,\@$s1);
   
   return ($ret1, $nm1, $ret2, $nm2);
 }
