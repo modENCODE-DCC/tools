@@ -18,7 +18,6 @@ sub kvetch{
 use strict;
 use warnings;
 use Getopt::Std;
-use Tie::File;
 use File::Copy;
 
 my $lines_read = 0;
@@ -168,9 +167,9 @@ sub bowtie2sam {
 		  }
 		      $bowtie_line = <BOWTIE>;
 		      $lines_read_bowtie++;
-		  print STDERR "$lines_read_bowtie lines read from Bowtie file\n" if ($lines_read % 100000 == 0);
 	      }
 	  }
+	  print STDERR "$lines_read_bowtie lines read in bowtie file; $lines_read lines read in spa file\n" if ($lines_read % 100000 == 0);
       }
   }
   print STDERR "++++++++++++++++++++++++++++++++++\n";
