@@ -57,11 +57,12 @@ my $antibody = new ModENCODE::WikiUpdate::Antibody({
         'overall' => { 'worm' => 'VERY GOOD', 'fly' => 'OK', 'human' => 'incomplete', 'notes' => '' },
       })
   });
-$updater->update(
+my $permalink = $updater->update(
   $antibody_name,
   $pi_code,
   $antibody
 );
+print STDERR "Got $permalink for $antibody_name.\n";
 
 print STDERR "-------Loaded fully populated antibody example-------\n";
 print STDERR "Take a look at this example at http://" . $updater->get_wiki_path() . "/index.php/Ab:AntibodyName:LS:1\n";
@@ -94,11 +95,12 @@ my $antibody = new ModENCODE::WikiUpdate::Antibody({
     'quality_control' => new ModENCODE::WikiUpdate::AntibodyQC({
       })
   });
-$updater->update(
+$permalink = $updater->update(
   $antibody_name,
   $pi_code,
   $antibody
 );
+print STDERR "Got $permalink for $antibody_name.\n";
 
 print STDERR "-------Loaded minimally populated antibody example---\n";
 print STDERR "Take a look at this example at http://" . $updater->get_wiki_path() . "/index.php/Ab:AntibodyName:LS:1\n";

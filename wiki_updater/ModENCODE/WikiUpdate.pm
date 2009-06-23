@@ -34,7 +34,7 @@ sub update {
     $self->debug("No page found, creating new article.");
     $self->make_new_article($wiki_name, $pi_code);
     $self->debug("Checking to make sure page got created.");
-    my $res = $self->get_client()->request($request);
+    $res = $self->get_client()->request($request);
     if ($res->content =~ m/<div class="noarticletext">/) {
       die "Tried to create page, but was unable to"
     }
@@ -70,6 +70,10 @@ sub update {
   if ($antibody->get_quality_control()) {
     $self->update_qc($wiki_name, $pi_code, $antibody->get_quality_control());
   }
+
+  $res = $self->get_client()->request($request);
+  my ($permalink) = ($res->content() =~ /Please use this page's permanent link.*>([^<]*)<\/a>/);
+  return $permalink;
 }
 
 sub update_qc {
