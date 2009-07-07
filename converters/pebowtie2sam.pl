@@ -293,7 +293,7 @@ sub get_cigar {
 	my $fiveprimejxn_end   = $c[3];
 	my $threeprimejxn_start = $c[6]+1;
 	my $threeprimejxn_end   = $c[7];
-	my $read_length_A = $fiveprimejxn_end-($fiveprimejxn_start+$rel_start);
+	my $read_length_A = $fiveprimejxn_end-($fiveprimejxn_start+$rel_start)+1;
 	my $intron_length = $threeprimejxn_start-$fiveprimejxn_end-1;
 	my $read_length_B = $read_length - $read_length_A;
 	$cigar .= $read_length_A . "M" . $intron_length . "N" . $read_length_B . "M";
