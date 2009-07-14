@@ -191,7 +191,7 @@ sub bowtie2sam_unpaired {
   $s->[5] = get_cigar($t[3],$s->[9],$t[2]);
   # coor
   ($s->[2],$s->[3]) = get_chrom_and_start($t[2],$t[3]);
-  $s->[3] = $t[3] + 1;
+  #$s->[3] += 1;
   $s->[1] |= 0x10 if ($t[1] eq '-');
   # mapQ
   $s->[4] = $t[6] == 0? 25 : 0;
