@@ -203,5 +203,237 @@ class ChadoReporter
     sth.finish
     return ret
   end
+
+
+
+  ################################################
+  # Data collection methods
+  ################################################
+  def get_basic_experiments
+    self.set_schema("reporting")
+    # Generate PostgreSQL functions for querying all of the submissions at once
+    self.init_reporting_function
+    self.make_reporting_views(false)
+
+    # Get a list of all the experiments (and their properties)
+    exps = self.get_available_experiments.map { |exp| exp.to_h }
+    exps.each do |experiment|
+      print "."
+      $stdout.flush
+      experiment["types"] = self.get_feature_types(experiment["xschema"])
+    end
+    print "\n"
+
+    exps.delete_if { |e|
+      # Ignore schema 0
+      e["xschema"] =~ /^modencode_experiment_(0)_data$/ #||
+    }
+
+
+    return exps
+  end
+
+  def get_nice_types(types)
+    # Get all of the feature types for each experiment, and from them
+    # generate a list of "nice" type names. For instance, types containing
+    # "intron", "exon", "start_codon", "stop_codon" are all categorized as
+    # "splice sites"
+    nice_types = Array.new
+
+    # "splice sites"
+    found_types = types.find_all { |type|
+      type =~ /^(intron|exon)(_.*)?$/ ||
+      type =~ /^(start|stop)_codon$/
+    }
+    if found_types.size > 0 then
+      nice_types.push "splice sites"
+      types -= found_types
+    end
+
+    # "transcription/coding junctions"
+    found_types = types.find_all { |type|
+      type =~ /CDS|UTR/ ||
+      type =~ /^TSS$/ ||
+      type =~ /^transcription_end_site$/
+    }
+    if found_types.size > 0 then
+      nice_types.push "transcription/coding junctions"
+      types -= found_types
+    end
+
+    # "alignments"
+    found_types = types.find_all { |type| type =~ /(.*_)?match(_.*)?/ }
+    if found_types.size > 0 then
+      nice_types.push "alignments"
+      types -= found_types
+    end
+
+    # "trace reads"
+    found_types = types.find_all { |type| type =~ /^TraceArchive_record$/ }
+    if found_types.size > 0 then
+      nice_types.push "trace reads"
+      types -= found_types
+    end
+
+    # "gene models"
+    found_types = types.find_all { |type|
+      type =~ /^(gene|transcript_region|transcript|mRNA)$/
+    }
+    if found_types.size > 0 then
+      nice_types.push "gene models"
+      types -= found_types
+    end
+
+    # "binding sites"
+    found_types = types.find_all { |type|
+      type =~ /^(.*_)?binding_site$/
+    }
+    if found_types.size > 0 then
+      nice_types.push "binding sites"
+      types -= found_types
+    end
+
+    # "origins of replication"
+    found_types = types.find_all { |type| type =~ /^origin_of_replication$/ }
+    if found_types.size > 0 then
+      nice_types.push "origins of replication"
+      types -= found_types
+    end
+
+    # "copy number variation"
+    found_types = types.find_all { |type| type =~ /^copy_number_variation$/ }
+    if found_types.size > 0 then
+      nice_types.push "copy number variation"
+      types -= found_types
+    end
+
+    # "EST alignments"
+    found_types = types.find_all { |type|
+      type =~ /^(EST|overlapping_EST_set)$/
+    }
+    if found_types.size > 0 then
+      nice_types.push "EST alignments"
+      types -= found_types
+    end
+
+    # "cDNA alignments"
+    found_types = types.find_all { |type|
+      type =~ /cDNA/
+    }
+    if found_types.size > 0 then
+      nice_types.push "cDNA alignments"
+      types -= found_types
+    end
+
+    # Accept but skip display of chromosomes/sequence regions
+    found_types = types.find_all { |type|
+      type =~ /^(chromosome(_.*)?)$/ ||
+      type =~ /^region$/
+    }
+    types -= found_types
+
+    # Keep the original types for anything we didn't translate above
+    nice_types += types
+    return nice_types
+  end
+
+  def unescape(str)
+    str = CGI.unescapeHTML(str)
+    match = str.match(/^"([^"]*)"/)
+    match.nil? ? str : match[1]
+  end
+
+  # Get any specimens (cell line, strain, stage) attached to this experiment;
+  # requires the correct type(s) (see regex below and filters to make sure it
+  # matches the expected style for specimen data
+
+  def collect_specimens(data, xschema)
+    specimens = data.find_all { |d| d["type"] =~ /MO:((whole_)?organism(_part)?)|(developmental_)?stage|RNA|cell(_line)?|strain_or_line|BioSample/ }
+    missing = Array.new
+    filtered_specimens = Array.new
+    # Make sure that the data we've found of these types actually matches an
+    # expected template for cell lines, strains, or stages
+    specimens.each { |d|
+      attrs = self.get_attributes_for_datum(d["data_id"], xschema)
+      if !( 
+           attrs.find { |a| a["heading"] == "official name" }.nil? && 
+           attrs.find { |a| a["heading"] == "Cell Type cv" }.nil? &&
+           attrs.find { |a| a["heading"] == "developmental stage" }.nil? &&
+           attrs.find { |a| a["heading"] == "strain" }.nil? 
+          ) then
+        # This datum has an attribute with one of the above headings.  All of
+        # the headings being checked are from the wiki, and as such are
+        # somewhat controlled by templates
+        d["attributes"] = attrs
+        filtered_specimens.push d
+      elsif attrs.find { |attr| attr["type"] == "modencode:reference" } then
+        # This datum references a datum in an older submission (as with the
+        # Celinker RNA samples), so we'll keep it in case it turns out to be an
+        # antibody, strain, stage, or cell line
+        ref_attr = attrs.find_all { |attr| attr["type"] == "modencode:reference" }
+        d["attributes"] = attrs
+        filtered_specimens.push d
+      elsif d["heading"] =~ /Anonymous Datum/ && d["type"] =~ /MO:((whole_)?organism(_part)?)/ then
+        # Occasionally we don't specify the piece of the organism that is
+        # collected except as an anonymous output between two protocols. This
+        # serves to capture at least whether we've got a whole organism or part
+        # of one
+        d["attributes"] = Array.new
+        filtered_specimens.push d
+      else
+        # Track any specimens that didn't fall into one of the above categories
+        # so we can add support for them to the code.
+        missing.push d
+      end
+    }
+    # Make sure the list of specimens is unique
+    filtered_specimens = filtered_specimens.uniq_by { |d| d["attributes"].nil? ? nil : d["attributes"] }
+
+    # Whine about any missing specimens
+    if missing.size > 0 then
+      if missing.size > 1 then
+        missing = missing[0...2].map { |d| d["value"] }.join(", ") + ", and #{missing.size - 2} more"
+      else
+        missing = missing[0]["value"]
+      end
+      puts "Unknown type of specimen: #{missing} for submission #{xschema}"
+    end
+
+    return filtered_specimens
+
+  end
+
+  # Get any antibodies attached to this experiment; requires the correct type
+  # (MO:antibody) and for it to be from a wiki page with an "official name" field
+  def collect_antibodies(data, xschema)
+    filtered_antibodies = Array.new
+    antibodies = data.find_all { |d| d["type"] =~ /MO:(antibody)/ }
+    antibodies.each { |d|
+      attrs = self.get_attributes_for_datum(d["data_id"], xschema)
+      unless attrs.find { |a| a["heading"] == "official name" }.nil? then
+        d["attributes"] = attrs
+        filtered_antibodies.push d
+      end
+    }
+    filtered_antibodies = filtered_antibodies.uniq_by { |d| d["attributes"].nil? ? nil : d["attributes"] }
+    return filtered_antibodies
+  end
+
+  # Get any microarrays attached to this experiment; requires the correct type
+  # (modencode:ADF) and for it to be from a wiki page with an "official name"
+  # field
+  def collect_microarrays(data, xschema)
+    filtered_arrays = Array.new
+    arrays = data.find_all { |d| d["type"] =~ /modencode:(ADF)/ }
+    arrays.each { |d|
+      attrs = self.get_attributes_for_datum(d["data_id"], xschema)
+      unless attrs.find { |a| a["heading"] == "official name" }.nil? then
+        d["attributes"] = attrs
+        filtered_arrays.push d
+      end
+    }
+    filtered_arrays = filtered_arrays.uniq_by { |d| d["attributes"].nil? ? nil : d["attributes"] }
+    return filtered_arrays
+  end
 end
 
