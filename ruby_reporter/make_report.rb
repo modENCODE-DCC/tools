@@ -538,16 +538,24 @@ exps.each { |e|
 
 # Throw out any deprecated or unreleased projects; look up the status in the pipeline
 # database, which is separate from Chado
+# Also, grab creation and release dates
 dbh = DBI.connect("dbi:Pg:dbname=pipeline_dev;host=heartbroken.lbl.gov", "db_public", "ir84#4nm")
-sth = dbh.prepare("SELECT status, deprecated_project_id FROM projects WHERE id = ?")
+sth = dbh.prepare("SELECT status, deprecated_project_id, created_at FROM projects WHERE id = ?")
+sth_release_date = dbh.prepare("SELECT MAX(c.end_time) AS release_date FROM commands c 
+                               INNER JOIN projects p ON p.id = c.project_id 
+                               WHERE c.type = 'Release' AND c.status = 'released' GROUP BY p.id HAVING p.id = ?")
 exps.each { |e|
   pipeline_id = e["xschema"].match(/_(\d+)_/)[1].to_i
   sth.execute(pipeline_id)
-  (status, deprecated) = sth.fetch_array
+  (status, deprecated, created_at) = sth.fetch_array
   e["status"] = status
   e["deprecated"] = (deprecated != "" && !deprecated.nil?)
+  e["created_at"] = created_at
+  sth_release_date.execute(pipeline_id)
+  e["released_at"] = sth_release_date.fetch_array
 }
 sth.finish
+sth_release_date.finish
 dbh.disconnect
 
 puts "#{exps.size} total projects"
@@ -558,5 +566,13 @@ puts "#{exps.size} released projects"
 exps.sort! { |e1, e2| e1["xschema"].match(/_(\d+)_/)[1].to_i <=> e2["xschema"].match(/_(\d+)_/)[1].to_i }
 
 # Output to HTML
-Formatter::format_html(exps, "output.html")
+if ARGV[0] && ARGV[0].length > 0 && Formatter.respond_to?("format_#{ARGV[0]}") then
+  Formatter::send("format_#{ARGV[0]}", exps, ARGV[1])
+elsif ARGV[0] && ARGV[0].length > 0 then
+  $stderr.puts "Unknown option: #{ARGV[0]}"
+  $stderr.puts "  Usage:"
+  $stderr.puts "    ./make_report.rb [" + Formatter.methods.find_all { |m| m =~ /^format_/ }.map { |m| m.match(/^format_(.*)/)[1] }.join(", ") + "] [outputfile]"
+else
+  Formatter::format_html(exps, ARGV[1])
+end
 
