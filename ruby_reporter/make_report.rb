@@ -7,6 +7,7 @@ require 'pp'
 require '/var/www/pipeline/submit/lib/pg_database_patch'
 require 'formatter'
 require 'chado_reporter'
+require 'geo'
 
 module Enumerable
   def uniq_by
@@ -32,6 +33,28 @@ else
       else
         # Get a list of all the experiments (and their properties)
         exps = r.get_basic_experiments
+
+        # Get GEO IDs
+        eutil = Eutils.new
+        eutil_result = eutil.esearch("modencode_submission_*")
+        eutil_result2 = eutil.esummary(nil, eutil_result[0], eutil_result[1])
+        got_summaries = REXML::XPath.match(eutil_result2.elements["eSummaryResult"], "DocSum/Item[@Name='summary']")
+        puts "Assigning GEO IDs to experiments"
+        got_summaries.each { |summary_element|
+          this_docsum = summary_element.parent
+          gse = "GSE" + this_docsum.elements["./Item[@Name='GSE']"].text
+          gsm = REXML::XPath.match(this_docsum.elements["./Item[@Name='Samples']"], "./Item[@Name='Sample']/Item[@Name='Accession']").map { |i| i.text }
+          this_exp = exps.find { |e| 
+            e["xschema"].match(/modencode_experiment_(\d+)_data/)[1].to_i == summary_element.text.match(/modencode_submission_(\d+)[^\d]/i)[1].to_i
+          }
+          if this_exp.nil? then
+            puts "Couldn't find experiment matching summary #{summary_element.text}"
+            next
+          end
+          this_exp["GSE"] = gse
+          this_exp["GSM"] = gsm
+        }
+        
         # Save the list of experiments so we can run this script again without regenerating it
         File.open('breakpoint1.dmp', 'w') { |f| Marshal.dump(exps, f) }
       end
@@ -270,6 +293,15 @@ exps.each { |e|
       stage = sp["attributes"].find_all { |attr| attr["heading"] == "official name" } if stage.size == 0
       e["stage"] += stage.map { |t| r.unescape(t["value"]) } unless stage.size == 0
     end
+    # What about just a simple data column typed as developmental_stage with a DBXref
+    # into the (worm|fly)_development CV?
+    if sp["type"] =~ /developmental_stage/ && !sp["dbxref"].nil? then
+      if stage = sp["dbxref"].match(/development:(.+$)/) then
+        stage = sp["dbxref"].match(/development:(.+)$/)[1]
+        e["stage"].push stage
+      end
+    end
+
 
     #############
     #  TISSUE   #
@@ -384,7 +416,7 @@ exps.each { |e|
     # If we didn't find a tissue, strain, stage, or cell_line from this specimen,
     # then it's not much of a specimen, is it? Whine about it so we can either add
     # a new case for it or fix the submission.
-    if tissue.size == 0 && strain.size == 0 && stage.size == 0 && cell_line.size == 0 then
+    if e["tissue"].size == 0 && e["strain"].size == 0 && e["stage"].size == 0 && e["cell_line"].size == 0 then
       puts tissue.size
       puts "What is #{sp.pretty_inspect} for #{e["xschema"]}"
     end

@@ -70,9 +70,13 @@ class ChadoReporter
 
   def get_data_for_schema(schema)
     sth = @dbh.prepare("
-      SELECT d.data_id, d.heading, d.name, d.value, cv.name || ':' || cvt.name AS type FROM #{schema}.data d
+      SELECT d.data_id, d.heading, d.name, d.value, cv.name || ':' || cvt.name AS type, db.name || ':' || dbx.accession AS dbxref FROM #{schema}.data d
       INNER JOIN #{schema}.cvterm cvt ON d.type_id = cvt.cvterm_id
       INNER JOIN #{schema}.cv ON cvt.cv_id = cv.cv_id
+      LEFT JOIN (
+        #{schema}.dbxref dbx
+        INNER JOIN #{schema}.db db ON dbx.db_id = db.db_id
+      ) ON dbx.dbxref_id = d.dbxref_id
       WHERE (d.heading, d.name) IN (
         SELECT d2.heading, d2.name FROM #{schema}.data d2 GROUP BY d2.heading, d2.name HAVING COUNT(d2.data_id) < 80
       )
@@ -348,7 +352,7 @@ class ChadoReporter
   # matches the expected style for specimen data
 
   def collect_specimens(data, xschema)
-    specimens = data.find_all { |d| d["type"] =~ /MO:((whole_)?organism(_part)?)|(developmental_)?stage|RNA|cell(_line)?|strain_or_line|BioSample/ }
+    specimens = data.find_all { |d| d["type"] =~ /MO:((whole_)?organism(_part)?)|(developmental_)?stage|(worm|fly)_development:|RNA|cell(_line)?|strain_or_line|BioSample/ }
     missing = Array.new
     filtered_specimens = Array.new
     # Make sure that the data we've found of these types actually matches an
@@ -380,6 +384,13 @@ class ChadoReporter
         # of one
         d["attributes"] = Array.new
         filtered_specimens.push d
+      elsif d["type"] =~ /developmental_stage/ then
+        d["attributes"] = attrs
+        filtered_specimens.push d
+      elsif attrs.find { |a| a["heading"] == "RNA ID" } then
+        # Ignore RNA collections
+      elsif d["value"].length == 0
+        # Ignore empty (probably anonymous) cells
       else
         # Track any specimens that didn't fall into one of the above categories
         # so we can add support for them to the code.
@@ -392,9 +403,9 @@ class ChadoReporter
     # Whine about any missing specimens
     if missing.size > 0 then
       if missing.size > 1 then
-        missing = missing[0...2].map { |d| d["value"] }.join(", ") + ", and #{missing.size - 2} more"
+        missing = missing[0...2].map { |d| d["value"] + " (#{d["type"]})" }.join(", ") + ", and #{missing.size - 2} more"
       else
-        missing = missing[0]["value"]
+        missing = missing[0]["value"] + " (#{missing[0]["type"]})"
       end
       puts "Unknown type of specimen: #{missing} for submission #{xschema}"
     end
