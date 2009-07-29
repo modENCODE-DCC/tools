@@ -68,6 +68,19 @@ class ChadoReporter
     return ret
   end
 
+  def get_geo_ids_for_schema(schema)
+    sth = @dbh.prepare("
+      SELECT d.value FROM #{schema}.data d INNER JOIN cvterm cvt ON d.type_id = cvt.cvterm_id
+      WHERE cvt.name = 'GEO_record'
+    ")
+    sth.execute
+    ret = sth.fetch_array
+    ret = Array.new if ret.nil?
+    sth.finish
+    return ret.flatten
+  end
+
+
   def get_data_for_schema(schema)
     sth = @dbh.prepare("
       SELECT d.data_id, d.heading, d.name, d.value, cv.name || ':' || cvt.name AS type, db.name || ':' || dbx.accession AS dbxref FROM #{schema}.data d

@@ -34,7 +34,7 @@ else
         # Get a list of all the experiments (and their properties)
         exps = r.get_basic_experiments
 
-        # Get GEO IDs
+        # Get GEO IDs from NCBI
         eutil = Eutils.new
         eutil_result = eutil.esearch("modencode_submission_*")
         eutil_result2 = eutil.esummary(nil, eutil_result[0], eutil_result[1])
@@ -566,6 +566,13 @@ exps.each { |e|
 
     e["antibody_names"].push name
   }
+}
+
+# Get any GEO IDs from Chado
+exps.each { |e|
+  e["GSM"] = Array.new if e["GSM"].nil?
+  geo_ids = r.get_geo_ids_for_schema(e["xschema"])
+  e["GSM"] += geo_ids unless geo_ids.nil?
 }
 
 # Throw out any deprecated or unreleased projects; look up the status in the pipeline

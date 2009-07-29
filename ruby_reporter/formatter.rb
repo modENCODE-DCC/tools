@@ -40,7 +40,9 @@ class Formatter
       cols.push e["antibody_names"].join(", ")
       cols.push e["created_at"]
       cols.push e["released_at"]
-      cols.push e["GSE"].nil? ? "" : e["GSE"] + ", " + e["GSM"].sort.join(", ")
+      geo_ids = [e["GSE"]]
+      geo_ids += e["GSM"] unless e["GSM"].nil?
+      cols.push geo_ids.compact.sort.join(", ")
 
       if block_given? then
         yield cols
