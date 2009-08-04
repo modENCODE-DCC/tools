@@ -56,12 +56,56 @@ class Formatter
     File.open(filename, "w") { |f|
       f.puts "<html>\n  <head>\n    <title>Exps</title>"
       f.puts <<-EOD
+      <script src="http://submit.modencode.org/submit/javascripts/prototype.js" type="text/javascript"></script>
       <script type="text/javascript">
-        setTimeout(function() { window.location.reload(); }, 10000);
+        var timer = setTimeout(function() { window.location.reload(); }, 10000);
+
+        var rows = new Array();
+        var title = new Array();
+        var row_contents = new Array();
+        var table;
+        function enableSorting() {
+          table = $(document.body).down().down();
+          title = table.down().childElements(); //.map(function (n) { return n.innerHTML });
+          rows = table.childElements().reject(function (n) { return n.down().tagName.toLowerCase() == "th" });
+
+          row_contents = rows.map(function (n) { return n.childElements().map(function (nn) { return nn.innerHTML }) });
+
+          title.each(function (n) {
+              n.style.color = "blue";
+              n.style.textDecoration = "underline";
+              n.observe("click", function(event) { sortBy(n); });
+              });
+        }
+
+        function sortBy(header) {
+          clearTimeout(timer);
+          var headerPos = title.indexOf(header);
+          rows.each(function (n) { n.remove(); });
+          new_rows = rows.sortBy(function (n) { 
+              var row_content = n.childElements().map(function (nn) { return nn.innerHTML });
+              var txt = row_content[headerPos];
+              if (parseInt(txt) == txt) {
+                return parseInt(txt);
+              } else {
+                return txt;
+              }
+              });
+          rows = new_rows;
+          color_mod = 0;
+          colors = [ "#DDDDDD", "#DDDDFF" ];
+          new_rows.each(function (n) {
+            n.childElements().each(function(nn) { nn.style.backgroundColor = colors[(color_mod % 2)]; });
+            color_mod++;
+            table.insert(n);
+            });
+
+        }
+
       </script>
       EOD
       f.puts "  </head>"
-      f.puts "<body>"
+      f.puts "<body onload=\"enableSorting()\">"
 
       f.puts "  <table>";
       header = true
