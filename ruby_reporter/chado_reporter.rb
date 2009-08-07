@@ -70,7 +70,7 @@ class ChadoReporter
 
   def get_geo_ids_for_schema(schema)
     sth = @dbh.prepare("
-      SELECT d.value FROM #{schema}.data d INNER JOIN cvterm cvt ON d.type_id = cvt.cvterm_id
+      SELECT d.value FROM #{schema}.data d INNER JOIN #{schema}.cvterm cvt ON d.type_id = cvt.cvterm_id
       WHERE cvt.name = 'GEO_record'
     ")
     sth.execute
