@@ -110,7 +110,7 @@ class Formatter
       f.puts "  <table>";
       header = true
       i = 0
-      ignore_cols = { "Creation Date" => nil, "Release Date" => nil }
+      ignore_cols = {} #{ "Creation Date" => nil, "Release Date" => nil }
       colors = [ "#DDDDFF", "#DDDDDD" ]
       Formatter::format(exps) { |cols|
         f.puts "    <tr>"
