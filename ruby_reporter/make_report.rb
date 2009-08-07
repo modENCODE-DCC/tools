@@ -301,6 +301,12 @@ exps.each { |e|
         e["stage"].push stage
       end
     end
+    # What about a Characteristic that's actually been typed as MO:developmental_stage?
+    stage_attr = sp["attributes"].find { |attr| attr["heading"] =~ /Characteristics?/ && attr["type"] =~ /MO:developmental_stage/ }
+    if stage_attr && stage.size == 0 then
+      stage = stage_attr["value"]
+      e["stage"].push stage unless (stage.nil? || stage.length == 0)
+    end
 
 
     #############
@@ -397,7 +403,8 @@ exps.each { |e|
       if cell_line_expand then
         cell_line = sp["attributes"].find_all { |attr| attr["attr_group"] == cell_line_expand["attr_group"] && attr["heading"] == "official name" }
       end
-      cell_line = sp["attributes"].find_all { |attr| attr["heading"] == "official name" } if (cell_line.nil? || cell_line.size == 0)
+      blank_cell_line = sp["attributes"].find { |attr| attr["type"] =~ /MO:cell_line/ }
+      cell_line = sp["attributes"].find_all { |attr| attr["heading"] == "official name" } if (blank_cell_line.nil? && (cell_line.nil? || cell_line.size == 0))
       e["cell_line"].push cell_line.map { |t| r.unescape(t["value"]) } unless cell_line.size == 0
     end
 
@@ -569,29 +576,40 @@ exps.each { |e|
 }
 
 # Get any GEO IDs from Chado
+puts "  Getting GEO IDs for submissions"
 exps.each { |e|
+  print "."; $stdout.flush
   e["GSM"] = Array.new if e["GSM"].nil?
   geo_ids = r.get_geo_ids_for_schema(e["xschema"])
   e["GSM"] += geo_ids unless geo_ids.nil?
 }
+puts "\n"
 
 # Throw out any deprecated or unreleased projects; look up the status in the pipeline
 # database, which is separate from Chado
 # Also, grab creation and release dates
 dbh = DBI.connect("dbi:Pg:dbname=pipeline_dev;host=heartbroken.lbl.gov", "db_public", "ir84#4nm")
-sth = dbh.prepare("SELECT status, deprecated_project_id, created_at FROM projects WHERE id = ?")
+sth = dbh.prepare("SELECT status, deprecated_project_id, created_at, updated_at FROM projects WHERE id = ?")
 sth_release_date = dbh.prepare("SELECT MAX(c.end_time) AS release_date FROM commands c 
                                INNER JOIN projects p ON p.id = c.project_id 
                                WHERE c.type = 'Release' AND c.status = 'released' GROUP BY p.id HAVING p.id = ?")
 exps.each { |e|
   pipeline_id = e["xschema"].match(/_(\d+)_/)[1].to_i
   sth.execute(pipeline_id)
-  (status, deprecated, created_at) = sth.fetch_array
+  (status, deprecated, created_at, updated_at) = sth.fetch_array
+  if status.nil? then
+    # Chado entry, but deleted from pipeline
+    exps.delete(e)
+    #e["deprecated"] = true
+    next
+  end
   e["status"] = status
   e["deprecated"] = (deprecated != "" && !deprecated.nil?)
-  e["created_at"] = created_at
   sth_release_date.execute(pipeline_id)
-  e["released_at"] = sth_release_date.fetch_array
+  release_date = sth_release_date.fetch_array
+  release_date = release_date.nil? ? updated_at : release_date[0]
+  e["created_at"] = Date.parse(created_at).to_s unless created_at.nil?
+  e["released_at"] = Date.parse(release_date).to_s unless release_date.nil?
 }
 sth.finish
 sth_release_date.finish
