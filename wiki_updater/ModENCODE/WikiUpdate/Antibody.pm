@@ -3,6 +3,7 @@ package ModENCODE::WikiUpdate::Antibody;
 use strict;
 use Class::Std;
 use ModENCODE::WikiUpdate::AntibodyQC;
+use ModENCODE::WikiUpdate::GeneConverter;
 
 my %official_name               :ATTR( :name<official_name> );
 my %short_name                  :ATTR( :name<short_name> );
@@ -48,7 +49,14 @@ sub set_quality_control {
 
 sub set_target_gene_product {
   my ($self, $new) = @_;
-  die "target_gene_product must start with either \"worm_genes:\" or \"fly_genes:\"" unless $new =~ /^(worm_genes|fly_genes)/;
+  die "target_gene_product must start with either \"worm_genes:\" or \"fly_genes:\"" unless $new =~ /^(worm_genes|fly_genes):/;
+  my ($organism, $gene) = ($new =~ m/(worm_genes|fly_genes):(.*)$/);
+  if ($gene =~ /^FBgn/i) {
+    # Convert FBgn to real gene name
+    $gene = ModENCODE::WikiUpdate::GeneConverter::get_fly_gene($gene);
+    print STDERR "Converted $new to $organism:$gene\n";
+    $new = "$organism:$gene";
+  }
   $target_gene_product{ident $self} = $new;
 }
 
@@ -82,7 +90,7 @@ sub set_clonalness {
 
 sub set_company {
   my ($self, $new) = @_;
-  my $options = [ "Abcam", "Abcam ChIP grade", "Covance", "LPBio", "LPBio ChIP grade", "Upstate", "Upstate ChIP grade", "Lab", "Other", "None-Control" ];
+  my $options = [ "Abcam", "Abcam ChIP grade", "Covance", "LPBio", "LPBio ChIP grade", "Upstate", "Upstate ChIP grade", "Lab", "Other", "None-Control", "SDI" ];
   die "company ($new) must be one of \"" . join('", "', @$options) . "\"" unless scalar(grep { $new eq $_ } @$options);
   $company{ident $self} = $new;
 }
