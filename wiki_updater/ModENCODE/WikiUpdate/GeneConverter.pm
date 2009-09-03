@@ -43,7 +43,7 @@ sub init_fly_genes {
     }
   }
   close FH;
-  print STDERR "Done.";
+  print STDERR "Done.\n";
 }
 
 1;
