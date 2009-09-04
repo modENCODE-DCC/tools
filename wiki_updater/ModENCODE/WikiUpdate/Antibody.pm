@@ -90,7 +90,7 @@ sub set_clonalness {
 
 sub set_company {
   my ($self, $new) = @_;
-  my $options = [ "Abcam", "Abcam ChIP grade", "Covance", "LPBio", "LPBio ChIP grade", "Upstate", "Upstate ChIP grade", "Lab", "Other", "None-Control", "SDI" ];
+  my $options = [ "Abcam", "Abcam ChIP grade", "Active Motif", "Aves Labs", "Covance", "DSHB", "LPBio", "LPBio ChIP grade", "Upstate", "Upstate ChIP grade", "Upstate-Millipore", "Millipore", "SDI", "Sigma", "Lab", "Other", "None-Control" ];
   die "company ($new) must be one of \"" . join('", "', @$options) . "\"" unless scalar(grep { $new eq $_ } @$options);
   $company{ident $self} = $new;
 }
