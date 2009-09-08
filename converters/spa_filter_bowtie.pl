@@ -83,9 +83,9 @@ sub bowtie2sam {
 	  #go through the SPA file, and then pick out the matching items from 
 	  #the bowtie file
 	  $lines_read++;
-
-	  my @spa = split("\t",$spa_line);
 	  chomp($spa_line);
+	  $spa_line =~ s/\s+/\t/g;
+	  my @spa = split("\t",$spa_line);
 	  my ($read_id, $read1_chr, $read1_pos, $read1_strand, $read2_chr, $read2_pos, $read2_strand) = ($spa_line =~ /(\S+)\s+(\S+)\s+(\d+)\s+([-+])\s+(\S+)\s+(\d+)\s+([+-])\s+/);
 	  #read id is first item
 
@@ -98,15 +98,21 @@ sub bowtie2sam {
 	  my @bowtie = ();
 	  if ($skip_flag) {
 	      $read1_found = $read2_found = 0; 
-	      #$skip_flag = 0;
+	      $skip_flag = 0;
 	      die;
 	  } else {
 	      
 	      while ((!$read1_found) || (!$read2_found)) {
+		  #print STDERR $bowtie_line . "\n";
+		  #print STDERR $read_id . "\n";
+
 		  while ($bowtie_line !~ /\Q$read_id/) {
 		      #keep reading file until a matching read is found.  
 		      chomp($bowtie_line);
-		      @bowtie = split("\t",$bowtie_line);
+		      $bowtie_line =~ s/\s+/\t/g;
+		      @bowtie = split(/\t/,$bowtie_line);
+		      #use Data::Dumper;
+		      #print STDERR Dumper(@bowtie);
 		      my ($bowtie_read) = ($bowtie[0] =~ /\w:(\d+:\d+:\d+)\/.+/);
 		      #print STDERR "BOWTIE READ: \"$bowtie_read\" vs \"$read_id\"\n";
 		      if ($bowtie_read gt $read_id) {
@@ -116,12 +122,17 @@ sub bowtie2sam {
 			  $skip_flag = 1;
 			  $read_not_found++;
 		      } #else {
-			  $bowtie_line = <BOWTIE>;
-			  $lines_read_bowtie++;
+		      last if eof(BOWTIE);
+		      $bowtie_line = <BOWTIE>;
+		      $lines_read_bowtie++;
 		      #}
 		  }
 		  chomp($bowtie_line);
-		  @bowtie = split("\t",$bowtie_line);
+		  $bowtie_line =~ s/\s+/\t/g;
+		  #print STDERR $bowtie_line . "\n";
+		  @bowtie = split(/\t/,$bowtie_line);
+		  #use Data::Dumper;
+		  #print STDERR Dumper(@bowtie);
 		  #print STDERR "BOWTIE id match at line $lines_read_bowtie: " . $bowtie[2] . ", " . $bowtie[0] . "\n";
 		  if (!$skip_flag) {
 		      if (!$read1_found) {
@@ -132,8 +143,7 @@ sub bowtie2sam {
 			  } else {
 			      $bowtie_chr = $bowtie[2];
 			  }
-			  if (($bowtie_chr eq $read1_chr) && ($bowtie[1] eq $read1_strand)) {
-
+			  if (($read1_chr =~ /\Q$bowtie_chr/) && ($bowtie[1] eq $read1_strand)) {
 			      print $bowtie_line . "\n";
 			      #print STDERR "wrote: $bowtie_line\n";
 			      $lines_written++;
@@ -150,7 +160,7 @@ sub bowtie2sam {
 			  } else {
 			      $bowtie_chr = $bowtie[2];
 			  }
-			  if (($bowtie_chr eq $read2_chr) && ($bowtie[1] eq $read2_strand)) {
+			  if (($read2_chr =~ /\Q$bowtie_chr/) && ($bowtie[1] eq $read2_strand)) {
 
 			      print $bowtie_line . "\n";
 			      #print STDERR "wrote: $bowtie_line\n";
@@ -163,13 +173,18 @@ sub bowtie2sam {
 		      }
 		  } else {
 		      print STDERR "*************************$read_id skipped!\n";
-		      die;
+		      #die;
 		  }
-		      $bowtie_line = <BOWTIE>;
-		      $lines_read_bowtie++;
+		  last if eof(BOWTIE);
+		  $bowtie_line = <BOWTIE>;
+		  $lines_read_bowtie++;
 	      }
 	  }
 	  print STDERR "$lines_read_bowtie lines read in bowtie file; $lines_read lines read in spa file\n" if ($lines_read % 100000 == 0);
+      } #end <SPA>
+      if (eof(SPA) && !eof(BOWTIE)) {
+	  print STDERR "End of SPA file reached before exhausing Bowtie hits\n";
+	  last;
       }
   }
   print STDERR "++++++++++++++++++++++++++++++++++\n";
