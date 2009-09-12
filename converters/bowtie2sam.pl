@@ -121,6 +121,7 @@ sub process_file {
     $last = '';
     my $line1 = shift @buffer;
     chomp($line1);
+    $line1 =~ s/\s+/\t/g;
     my @t1 = split(/\t/, $line1);
     $t1[0] =~ s/\/[12]$//;
     
@@ -187,6 +188,7 @@ sub bowtie2sam_unpaired {
 
   # read & quality
   $s->[9] = $t[4]; $s->[10] = $t[5];
+
   # cigar
   $s->[5] = get_cigar($t[3],$s->[9],$t[2]);
   # coor
@@ -350,7 +352,7 @@ sub some_processing {
   #add a tag for the junction
   #junction, if present, will go into the Y0 tag
   my @c = split("_", @{$t}[2]);
-  push (@$s, "Y0:Z:" . @{$t}[2]) if (length(@c) > 1);
+  push (@$s, "Y0:Z:" . @{$t}[2]) if (@c > 1);
 
   return $nm;
 }
@@ -384,7 +386,8 @@ sub get_chrom_and_start {
     my ($chrom, $start) = @_;
     my @c = split("_", $chrom);
     $start++;  #dm3 coords are 0-based, but we need 1-based
-    if (length(@c)>1) {
+    use Data::Dumper;
+    if (@c>1) {
 	#there's a junction read
 	#assuming that junctions are same chrom
 	$start += $c[2];
