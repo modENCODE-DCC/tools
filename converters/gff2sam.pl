@@ -22,15 +22,18 @@ my $lines = 0;
 while (<>) {
     $lines++;
   next unless (/^\S/);
-  my @gff = split(/\t/, $_);
+    next if (/^#/);
+    my $gff_line = $_;
+  my @gff = split(/\t/, $gff_line);
   my @attributes = split(/;/,$gff[8]);
   my @s;
   my $cigar = '';
     my $read_length = 0;
   # read id
 
-  ($s[0],$read_length) = ($attributes[0] =~ /Target\=(_\S+)\s\d+\s(\d+)/);
-
+  ($s[0],$read_length) = ($attributes[0] =~ /Target\=(\S+)\s\d+\s(\d+)/);
+  die "died at line num $lines\n$gff_line" if !($read_length > 0);
+ 
   # bit flag
   $s[1] = 0;
   $s[1] = 0x0010 if $gff[6] eq '-';
