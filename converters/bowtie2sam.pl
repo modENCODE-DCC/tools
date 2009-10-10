@@ -48,21 +48,23 @@ my $lines_in_file = 0;
 my $start = time();
 my @buffer;
 my $pair_flag = 0;
+my $zerobased = 0;
 ($lines_read, $lines_written, $lines_in_file) = &bowtie2sam;
 my $stop = time();
 my $time = $stop-$start;
-my $time_s = printf("%02d:%02d:%02d", int($time / 3600), int(($time % 3600) / 60), int($time % 60));
+#my $time_s = sprintf("%02d:%02d:%02d", int($time / 3600), int(($time % 3600) / 60), int($time % 60));
   print STDERR "Done. Processed $lines_written/$lines_in_file reads in file in " . $time . " sec \n";
 
 exit;
 
 sub usage {
-    return ("\nUsage: bowtie2sam.pl [-p] <aln.bowtie>\nOptions: -p  reads are from paired-end sequencing.  otherwise assumes single-read.\n\n");
+    return ("\nUsage: bowtie2sam.pl [-p] <aln.bowtie>\nOptions: -p  reads are from paired-end sequencing.  otherwise assumes single-read.\n\n         -zerobased  if using zero-based coordinates.  otherwize assumes 1-based");
 }
 
 sub bowtie2sam {
 
-  GetOptions("p" => \$pair_flag) or die (&usage);
+  GetOptions("p" => \$pair_flag,
+      "zerobased" => \$zerobased) or die (&usage);
   die(&usage) if (@ARGV == 0 && -t STDIN);
   if ($pair_flag) {
       print STDERR "processing paired-end file\n";
@@ -97,17 +99,17 @@ sub bowtie2sam {
 	  push @buffer, $_;
 
       if ($pair_flag) {
-	  &process_pe_file($lines_read, \$lines_written, $lines_in_file);
+	  &process_pe_file($lines_read, \$lines_written, $lines_in_file, $zerobased);
       } else {
-	  &process_file($lines_read, \$lines_written, $lines_in_file);
+	  &process_file($lines_read, \$lines_written, $lines_in_file, $zerobased);
       }
   }
   #clear out buffer
   while (@buffer > 0) {
       if ($pair_flag) {
-	  &process_pe_file($lines_read, \$lines_written, $lines_in_file);
+	  &process_pe_file($lines_read, \$lines_written, $lines_in_file, $zerobased);
       } else {
-	  &process_file($lines_read, \$lines_written, $lines_in_file);
+	  &process_file($lines_read, \$lines_written, $lines_in_file, $zerobased);
       }
   }
 
@@ -116,7 +118,7 @@ sub bowtie2sam {
 }
 
 sub process_file {
-    my ($lines_read, $lines_written, $lines_in_file) = @_;
+    my ($lines_read, $lines_written, $lines_in_file, $zerobased) = @_;
     my (@read1, $last, @staging, $k, $best_s, $subbest_s, $best_k);
     $last = '';
     my $line1 = shift @buffer;
@@ -126,7 +128,7 @@ sub process_file {
     $t1[0] =~ s/\/[12]$//;
     
     
-    my ($name, $nm) = &bowtie2sam_unpaired($line1, \@read1); # read_name, number of mismatches, read_object
+    my ($name, $nm) = &bowtie2sam_unpaired($line1, \@read1, $zerobased); # read_name, number of mismatches, read_object
 
     print join("\t", @read1) .  "\n";
     ${$lines_written}++;
@@ -134,7 +136,7 @@ sub process_file {
 }
 
 sub process_pe_file {
-    my ($lines_read, $lines_written, $lines_in_file) = @_;
+    my ($lines_read, $lines_written, $lines_in_file, $zerobased) = @_;
     my (@read1, @read2, $last, @staging, $k, $best_s, $subbest_s, $best_k);
     $last = '';
     my $line1 = shift @buffer;
@@ -153,7 +155,7 @@ sub process_pe_file {
 	$t2[0] =~ s/\/[12]$//;
     }
     
-    my ($name1, $nm1, $name2, $nm2) = &bowtie2sam_paired($line1, \@read1, $line2, \@read2); # read_name, number of mismatches, read_object
+    my ($name1, $nm1, $name2, $nm2) = &bowtie2sam_paired($line1, \@read1, $line2, \@read2,$zerobased); # read_name, number of mismatches, read_object
 
     print join("\t", @read1) .  "\n";
     ${$lines_written}++;
@@ -171,7 +173,7 @@ sub process_pe_file {
 }
 
 sub bowtie2sam_unpaired {
-  my ($line, $s) = @_;
+  my ($line, $s, $zerobased) = @_;
   my ($nm, $ret);
   chomp($line);
   my @t = split("\t", $line);
@@ -192,7 +194,7 @@ sub bowtie2sam_unpaired {
   # cigar
   $s->[5] = get_cigar($t[3],$s->[9],$t[2]);
   # coor
-  ($s->[2],$s->[3]) = get_chrom_and_start($t[2],$t[3]);
+  ($s->[2],$s->[3]) = get_chrom_and_start($t[2],$t[3],$zerobased);
   #$s->[3] += 1;
   $s->[1] |= 0x10 if ($t[1] eq '-');
   # mapQ
@@ -204,7 +206,7 @@ sub bowtie2sam_unpaired {
 }
 
 sub bowtie2sam_paired {
-  my ($line1, $s1, $line2, $s2) = @_;
+  my ($line1, $s1, $line2, $s2, $zerobased) = @_;
 
   chomp($line1);
   chomp($line2);
@@ -236,8 +238,8 @@ sub bowtie2sam_paired {
   #$s->[2] = $t[2]; 
   #$s->[2] = get_start($t[2]);
   #$s->[3] = $t[3] + 1;
-  ($s1->[2],$s1->[3]) = get_chrom_and_start($t1[2],$t1[3]);
-  ($s2->[2],$s2->[3]) = get_chrom_and_start($t2[2],$t2[3]) if ($line2 ne "");
+  ($s1->[2],$s1->[3]) = get_chrom_and_start($t1[2],$t1[3],$zerobased);
+  ($s2->[2],$s2->[3]) = get_chrom_and_start($t2[2],$t2[3],$zerobased) if ($line2 ne "");
   
   # read & quality
   $s1->[9] = $t1[4]; $s1->[10] = $t1[5];
@@ -385,7 +387,7 @@ sub get_chrom_and_start {
 
     my ($chrom, $start) = @_;
     my @c = split("_", $chrom);
-    $start++;  #dm3 coords are 0-based, but we need 1-based
+    $start++ if $zerobased;  #dm3 coords are 0-based, but we need 1-based
     use Data::Dumper;
     if (@c>1) {
 	#there's a junction read
