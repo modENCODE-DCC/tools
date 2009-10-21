@@ -1,5 +1,5 @@
 class Formatter
-  def self.format(exps)
+  def self.format(exps, collapse_long=true, extra_cols = {})
     cols = [
         "ID",
         "Project",
@@ -15,7 +15,7 @@ class Formatter
         "Creation Date",
         "Release Date",
         "GEO IDs",
-    ]
+    ] + extra_cols.keys
     if block_given? then
       yield cols
     else
@@ -36,13 +36,18 @@ class Formatter
         s =~ /y\[1\].*\scn\[1\].*\sbw\[1\].*\ssp\[1\]/ ? "y; cn bw sp" : s 
       }.uniq.sort.join(", ")
       cols.push e["cell_line"].uniq.join(", ")
-      cols.push e["stage"].size > 5 ? e["stage"].sort[0..5].join(", ") + ", and #{e["stage"].size-5} more..." : e["stage"].sort.join(", ")
+      if collapse_long then
+        cols.push e["stage"].size > 5 ? e["stage"].sort[0..5].join(", ") + ", and #{e["stage"].size-5} more..." : e["stage"].sort.join(", ")
+      else
+        cols.push e["stage"].sort.join(", ")
+      end
       cols.push e["antibody_names"].join(", ")
       cols.push e["created_at"]
       cols.push e["released_at"]
       geo_ids = [e["GSE"]]
       geo_ids += e["GSM"] unless e["GSM"].nil?
       cols.push geo_ids.compact.sort.join(", ")
+      extra_cols.values.each { |colname| cols.push e[colname] }
 
       if block_given? then
         yield cols
@@ -135,7 +140,7 @@ class Formatter
   def self.format_csv(exps, filename = "output.csv")
     filename = "output.csv" if filename.nil?
     File.open(filename, "w") { |f|
-      Formatter::format(exps) { |cols|
+      Formatter::format(exps, false, {"Name" => "uniquename"}) { |cols|
         f.puts cols.join("\t")
       }
     }
