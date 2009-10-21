@@ -294,7 +294,24 @@ class ChadoReporter
 
     # "gene models"
     found_types = types.find_all { |type|
-      type =~ /^(gene|transcript_region|transcript|mRNA)$/
+      type =~ /^(gene|transcript|mRNA)$/
+    }
+    if found_types.size > 0 then
+      nice_types.push "gene models"
+      types -= found_types
+    end
+
+    # "transcript fragments"
+    found_types = types.find_all { |type|
+      type =~ /^(transcript_region)$/
+    }
+    if found_types.size > 0 then
+      nice_types.push "transcript fragments"
+      types -= found_types
+    end
+    # "gene models"
+    found_types = types.find_all { |type|
+      type =~ /^(gene|transcript|mRNA)$/
     }
     if found_types.size > 0 then
       nice_types.push "gene models"
