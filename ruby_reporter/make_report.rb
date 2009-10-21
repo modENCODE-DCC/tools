@@ -167,8 +167,9 @@ exps.each { |e|
   referenced_specimens = e["specimens"].find_all { |sp| sp["attributes"].find { |attr| attr["type"] == "modencode:reference" } }
   referenced_specimens.each { |rsp|
     # Get the old experiment ID from the specimen's DBXref
-    old_experiment_id = rsp["attributes"].find { |attr| attr["type"] == "modencode:reference" }["value"]
+    old_experiment_id = rsp["attributes"].find { |attr| attr["type"] == "modencode:reference" }["value"].split(/:/)[0]
     old_experiment = exps.find { |e2| e2["xschema"] =~ /#{old_experiment_id}/ }
+    $stdout.puts "Getting old experiment #{old_experiment_id}" 
     next if (old_experiment_id.nil? || old_experiment_id !~ /^\d+$/)
 
     # Get all of the data from the old experiment that was involved in the 
@@ -297,7 +298,8 @@ exps.each { |e|
     # into the (worm|fly)_development CV?
     if sp["type"] =~ /developmental_stage/ && !sp["dbxref"].nil? then
       if stage = sp["dbxref"].match(/development:(.+$)/) then
-        stage = sp["dbxref"].match(/development:(.+)$/)[1]
+        #stage = sp["dbxref"].match(/development:(.+)$/)[1]
+        stage = sp["value"]
         e["stage"].push stage
       end
     end
@@ -616,7 +618,7 @@ sth_release_date.finish
 dbh.disconnect
 
 puts "#{exps.size} total projects"
-exps.delete_if { |e| e["status"] != "released" || e["deprecated"] }
+exps.delete_if { |e| (e["status"] != "released" && e["status"] != "approved by user") || e["deprecated"] }
 puts "#{exps.size} released projects"
 
 # Sort the projects by ID
