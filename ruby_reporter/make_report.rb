@@ -169,7 +169,6 @@ exps.each { |e|
     # Get the old experiment ID from the specimen's DBXref
     old_experiment_id = rsp["attributes"].find { |attr| attr["type"] == "modencode:reference" }["value"].split(/:/)[0]
     old_experiment = exps.find { |e2| e2["xschema"] =~ /#{old_experiment_id}/ }
-    $stdout.puts "Getting old experiment #{old_experiment_id}" 
     next if (old_experiment_id.nil? || old_experiment_id !~ /^\d+$/)
 
     # Get all of the data from the old experiment that was involved in the 
@@ -203,6 +202,14 @@ exps.each { |e|
   e["strain"] = Array.new if e["strain"].nil?
   e["cell_line"] = Array.new if e["cell_line"].nil?
   e["stage"] = Array.new if e["stage"].nil?
+  e["compound"] = Array.new if e["compound"].nil?
+  e["array_platform"] = Array.new if e["array_platform"].nil?
+
+    if e["xschema"] =~ /_444_/ then
+      puts "-----"
+      puts e["specimens"].pretty_inspect
+      exit
+    end
 
   e["specimens"].each { |sp|
     ####
@@ -284,7 +291,7 @@ exps.each { |e|
       if stage_expand then
         stage += sp["attributes"].find_all { |attr| attr["attr_group"] == stage_expand["attr_group"] && attr["heading"] == "official name" }
       end
-      e["stage"] += stage
+      e["stage"] += stage.map { |s| s["value"] }
     end
     # How about any "Parameter/Result Value" columns with a type containing "stage" and 
     # an attribute with a heading of "developmental stage" or "official name"? If yes, 
@@ -411,6 +418,29 @@ exps.each { |e|
     end
 
     #############
+    # PLATFORMS #
+    #############
+    if sp["type"] =~ /modencode:ADF/ then
+      array_platform = sp["attributes"].find_all { |attr| attr["heading"] == "platform" }
+      e["array_platform"].push array_platform.map { |t| r.unescape(t["value"]) } unless array_platform.size == 0
+    end
+
+    #############
+    # COMPOUND  #
+    #############
+    if sp["type"] =~ /MO:genomic_DNA/ then
+      compound = sp["attributes"].find_all { |attr| attr["type"] =~ /MO:Compound/i }
+      if (compound.size >= 0) then
+        unit = sp["attributes"].find_all { |attr| attr["heading"] =~ /Unit/i }
+        dose = sp["attributes"].find_all { |attr| attr["name"] =~ /Dose/i }
+        if (unit.size >= 0 && dose.size >= 0) then
+          e["compound"].push "#{dose[0]["value"]}#{unit[0]["value"]} #{compound[0]["value"]}"
+        else
+        end
+      end
+    end
+
+    #############
     #  CLEANUP  #
     #############
     # If this is a cell_line specimen, then we may not need a strain, so add
@@ -425,14 +455,18 @@ exps.each { |e|
     # If we didn't find a tissue, strain, stage, or cell_line from this specimen,
     # then it's not much of a specimen, is it? Whine about it so we can either add
     # a new case for it or fix the submission.
-    if e["tissue"].size == 0 && e["strain"].size == 0 && e["stage"].size == 0 && e["cell_line"].size == 0 then
-      puts tissue.size
+    if e["tissue"].size == 0 && e["strain"].size == 0 && e["stage"].size == 0 && e["cell_line"].size == 0 && e["array_platform"].size == 0 && e["compound"].size == 0 then
       puts "What is #{sp.pretty_inspect} for #{e["xschema"]}"
     end
   }
 
   # Strip any leading CV name from stages, e.g. "FlyBase development CV:"
-  e["stage"].map { |s| s.sub!(/^.*development(_|\s)*CV:/, '') } unless e["stage"].nil?
+  e["stage"].map { |s| 
+    if (s.is_a?(Hash)) then
+      puts s.pretty_inspect
+    end
+    s.sub!(/^.*development(_|\s)*CV:/, '')
+  } unless e["stage"].nil?
 
   # If we _still_ haven't found out what tissue was used, and _any_ specimen has
   # a type of "whole_organism", we'll go with that
@@ -440,9 +474,12 @@ exps.each { |e|
     e["tissue"].push "whole organism" 
   end
 
+  e["array_platform"].push("N/A") if e["array_platform"].size == 0
   e["strain"].uniq!
   e["tissue"].uniq!
   e["cell_line"].uniq!
+  e["array_platform"].uniq!
+  e["compound"].uniq!
   e["stage"].uniq! unless e["stage"].nil?
 }
 
@@ -454,7 +491,7 @@ exps.each { |e|
   # extraction + sequencing + reverse transcription - ChIP = RTPCR
   # extraction + sequencing - reverse transcription - ChIP = RNA-seq
   if 
-    protocol_types.find { |pt| pt =~ /nucleic_acid_extraction|RNA extraction/ } && 
+    protocol_types.find { |pt| pt =~ /nucleic acid extraction|nucleic_acid_extraction|RNA extraction/ } && 
     protocol_types.find { |pt| pt =~ /sequencing(_protocol)?/ } && 
     protocol_types.find { |pt| pt =~ /chromatin_immunoprecipitation/ }.nil?
     then

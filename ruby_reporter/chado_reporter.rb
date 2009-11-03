@@ -377,12 +377,12 @@ class ChadoReporter
     match.nil? ? str : match[1]
   end
 
-  # Get any specimens (cell line, strain, stage) attached to this experiment;
+  # Get any specimens (cell line, strain, stage, array) attached to this experiment;
   # requires the correct type(s) (see regex below and filters to make sure it
   # matches the expected style for specimen data
 
   def collect_specimens(data, xschema)
-    specimens = data.find_all { |d| d["type"] =~ /MO:((whole_)?organism(_part)?)|(developmental_)?stage|(worm|fly)_development:|RNA|cell(_line)?|strain_or_line|BioSample/ }
+    specimens = data.find_all { |d| d["type"] =~ /MO:((whole_)?organism(_part)?)|(developmental_)?stage|(worm|fly)_development:|RNA|cell(_line)?|strain_or_line|BioSample|modencode:ADF|MO:genomic_DNA/ }
     missing = Array.new
     filtered_specimens = Array.new
     # Make sure that the data we've found of these types actually matches an
@@ -415,6 +415,12 @@ class ChadoReporter
         d["attributes"] = Array.new
         filtered_specimens.push d
       elsif d["type"] =~ /developmental_stage/ then
+        d["attributes"] = attrs
+        filtered_specimens.push d
+      elsif d["type"] =~ /modencode:ADF/ then
+        d["attributes"] = attrs
+        filtered_specimens.push d
+      elsif attrs.find { |a| a["type"] =~ /MO:Compound/i } then
         d["attributes"] = attrs
         filtered_specimens.push d
       elsif attrs.find { |a| a["heading"] == "RNA ID" } then

@@ -12,6 +12,8 @@ class Formatter
         "Cell Line",
         "Stage",
         "Antibody",
+        "Compound",
+        "Platform",
         "Creation Date",
         "Release Date",
         "GEO IDs",
@@ -42,6 +44,8 @@ class Formatter
         cols.push e["stage"].sort.join(", ")
       end
       cols.push e["antibody_names"].join(", ")
+      cols.push e["compound"].join(", ")
+      cols.push e["array_platform"].join(", ")
       cols.push e["created_at"]
       cols.push e["released_at"]
       geo_ids = [e["GSE"]]
