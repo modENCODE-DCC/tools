@@ -100,6 +100,52 @@ class ChadoReporter
     return ret
   end
 
+  def get_experimental_factors_for_schema(schema)
+    sth = @dbh.prepare("
+      SELECT ep.value AS name, db.name AS xschema, db.url FROM 
+      #{schema}.experiment_prop ep
+      INNER JOIN #{schema}.dbxref dbx ON ep.dbxref_id = dbx.dbxref_id
+      INNER JOIN #{schema}.db ON dbx.db_id = db.db_id
+      WHERE db.description = 'modencode_submission'
+    ")
+    sth.execute
+    ret = sth.fetch_all.map { |row| row.to_h }
+    sth.finish
+    ret.each { |row| 
+      if row["url"] =~ /^\d+$/ then
+        row["xschema"] = "modencode_experiment_#{row["url"]}_data"
+      else
+        row["xschema"].sub!(/modencode_submission_(\d+)$/, 'modencode_experiment_\1_data') 
+      end
+    }
+    return ret
+  end
+
+  def get_referenced_factor_for_schema(schema, name)
+    sth = @dbh.prepare("
+      SELECT d.data_id, d.heading, d.name, d.value, cv.name || ':' || cvt.name AS type FROM #{schema}.data d
+      INNER JOIN #{schema}.cvterm cvt ON d.type_id = cvt.cvterm_id
+      INNER JOIN #{schema}.cv ON cvt.cv_id = cv.cv_id
+      WHERE d.name = ?
+    ")
+    sth.execute(name)
+    ret = sth.fetch_all.map { |row| row.to_h }
+    sth.finish
+
+    ret.clone.each do |row|
+      older_data = self.get_older_data(schema, row["data_id"])
+      while older_data.size > 0
+        ret += older_data
+        older_ids = older_data.map { |d| d["data_id"] }
+        older_data = Array.new
+        older_ids.each { |oid|
+          older_data += get_older_data(schema, oid)
+        }
+      end
+    end
+    return ret
+  end
+
   def get_referenced_data_for_schema(schema, name, value)
     sth = @dbh.prepare("
       SELECT d.data_id, d.heading, d.name, d.value, cv.name || ':' || cvt.name AS type FROM #{schema}.data d
@@ -144,7 +190,7 @@ class ChadoReporter
   end
 
   def get_protocol_types_for_data_ids(data_ids, schema)
-    sth = @dbh.prepare("SELECT DISTINCT a.value AS type, p.description FROM #{schema}.attribute a 
+    sth = @dbh.prepare("SELECT DISTINCT a.value AS type, p.name, p.description FROM #{schema}.attribute a 
       INNER JOIN #{schema}.protocol_attribute pa ON a.attribute_id = pa.attribute_id
       INNER JOIN #{schema}.protocol p ON p.protocol_id = pa.protocol_id
       INNER JOIN #{schema}.applied_protocol ap ON p.protocol_id = ap.protocol_id
@@ -210,7 +256,7 @@ class ChadoReporter
   end
 
   def get_protocol_types(schema)
-    sth = @dbh.prepare("SELECT DISTINCT a.value AS type, p.description FROM #{schema}.attribute a 
+    sth = @dbh.prepare("SELECT DISTINCT a.value AS type, p.name, p.description FROM #{schema}.attribute a 
       INNER JOIN #{schema}.protocol_attribute pa ON a.attribute_id = pa.attribute_id
       INNER JOIN #{schema}.protocol p ON p.protocol_id = pa.protocol_id
       WHERE a.heading = 'Protocol Type'
@@ -382,7 +428,7 @@ class ChadoReporter
   # matches the expected style for specimen data
 
   def collect_specimens(data, xschema)
-    specimens = data.find_all { |d| d["type"] =~ /MO:((whole_)?organism(_part)?)|(developmental_)?stage|(worm|fly)_development:|RNA|cell(_line)?|strain_or_line|BioSample|modencode:ADF|MO:genomic_DNA/ }
+    specimens = data.find_all { |d| d["type"] =~ /MO:((whole_)?organism(_part)?)|(developmental_)?stage|(worm|fly)_development:|RNA|cell(_line)?|strain_or_line|BioSample|modencode:ADF|MO:genomic_DNA|SO:RNAi_reagent|MO:GrowthCondition|modencode:ShortReadArchive_project_ID(_list)? \(SRA\)/ }
     missing = Array.new
     filtered_specimens = Array.new
     # Make sure that the data we've found of these types actually matches an
@@ -407,6 +453,9 @@ class ChadoReporter
         ref_attr = attrs.find_all { |attr| attr["type"] == "modencode:reference" }
         d["attributes"] = attrs
         filtered_specimens.push d
+      elsif attrs.find { |attr| attr["heading"] =~ /Characteristics?/ } then
+        d["attributes"] = attrs
+        filtered_specimens.push d
       elsif d["heading"] =~ /Anonymous Datum/ && d["type"] =~ /MO:((whole_)?organism(_part)?)/ then
         # Occasionally we don't specify the piece of the organism that is
         # collected except as an anonymous output between two protocols. This
@@ -414,14 +463,26 @@ class ChadoReporter
         # of one
         d["attributes"] = Array.new
         filtered_specimens.push d
+      elsif d["type"] =~ /MO:(whole_)?organism/ then
+        d["attributes"] = attrs
+        filtered_specimens.push d
       elsif d["type"] =~ /developmental_stage/ then
         d["attributes"] = attrs
         filtered_specimens.push d
       elsif d["type"] =~ /modencode:ADF/ then
         d["attributes"] = attrs
         filtered_specimens.push d
+      elsif d["type"] =~ /SO:RNAi_reagent/ then
+        d["attributes"] = attrs
+        filtered_specimens.push d
+      elsif d["type"] =~ /MO:GrowthCondition/ then
+        d["attributes"] = nil
+        filtered_specimens.push d
       elsif attrs.find { |a| a["type"] =~ /MO:Compound/i } then
         d["attributes"] = attrs
+        filtered_specimens.push d
+      elsif d["type"] =~ /modencode:ShortReadArchive_project_ID(_list)? \(SRA\)/ then
+        d["attributes"] = nil
         filtered_specimens.push d
       elsif attrs.find { |a| a["heading"] == "RNA ID" } then
         # Ignore RNA collections
@@ -434,7 +495,7 @@ class ChadoReporter
       end
     }
     # Make sure the list of specimens is unique
-    filtered_specimens = filtered_specimens.uniq_by { |d| d["attributes"].nil? ? nil : d["attributes"] }
+    filtered_specimens = filtered_specimens.uniq_by { |d| d["attributes"].nil? ? d["value"] : d["attributes"] }
 
     # Whine about any missing specimens
     if missing.size > 0 then
