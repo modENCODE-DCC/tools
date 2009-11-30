@@ -443,10 +443,10 @@ else
       #############
       if sp["type"] =~ /MO:genomic_DNA/ then
         compound = sp["attributes"].find_all { |attr| attr["type"] =~ /MO:Compound/i }
-        if (compound.size >= 0) then
+        if (compound.size > 0) then
           unit = sp["attributes"].find_all { |attr| attr["heading"] =~ /Unit/i }
           dose = sp["attributes"].find_all { |attr| attr["name"] =~ /Dose/i }
-          if (unit.size >= 0 && dose.size >= 0) then
+          if (unit.size > 0 && dose.size > 0) then
             e["compound"].push "#{dose[0]["value"]}#{unit[0]["value"]} #{compound[0]["value"]}"
           else
           end
