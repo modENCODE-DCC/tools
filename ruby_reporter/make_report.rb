@@ -713,7 +713,6 @@ else
     if status.nil? then
       # Chado entry, but deleted from pipeline
       exps.delete(e)
-      #e["deprecated"] = true
       next
     end
     e["status"] = status
@@ -733,7 +732,7 @@ else
 
   # Get any projects that aren't in Chado yet
   chado_ids = exps.map { |e| e["xschema"].match(/_(\d+)_/)[1].to_i }
-  sth = dbh.prepare("SELECT id, name, status, pi, lab, created_at FROM projects")
+  sth = dbh.prepare("SELECT id, name, status, pi, lab, created_at, deprecated_project_id FROM projects")
   sth.execute()
   sth.fetch_all.each { |row|
     next if chado_ids.include?(row["id"].to_i)
@@ -743,8 +742,8 @@ else
       "status" => row["status"],
       "project" => row["pi"].split(/,/)[0],
       "lab" => row["lab"].split(/,/)[0],
-      "created_at" => row["created_at"],
       "created_at" => Date.parse(row["created_at"].to_s).to_s,
+      "deprecated" => (row["deprecated_project_id"] != "" && !row["deprecated_project_id"].nil?) ? row["deprecated_project_id"] : false,
       "released_at" => "",
       "organisms" => [],
       "types" => [],

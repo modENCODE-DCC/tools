@@ -31,6 +31,7 @@ class Formatter
       cols = Array.new
       id = e["xschema"].match(/_(\d+)_/)[1]
       id += " deprecated by #{e["deprecated"]}" if e["deprecated"]
+      e["status"] = "deprecated" if e["deprecated"]
       cols.push id
       cols.push e["project"]
       cols.push e["lab"]
@@ -238,28 +239,33 @@ class Formatter
               end
               line.push stage
             elsif k == "Status" then
-              status = case Project::Status::status_number(cols[idx])
-                       when 0
-                         "reviewing"
-                       when 1
-                         "uploaded"
-                       when 2
-                         "uploaded"
-                       when 3
-                         "reviewing"
-                       when 4
-                         "reviewing"
-                       when 5
-                         "reviewing"
-                       when 6
-                         "preview available"
-                       when 7
-                         "approved"
-                       when 8
-                         "released"
-                       when 9
-                         "released"
-                       end
+              status_num = Project::Status::status_number(cols[idx])
+              if !status_num.nil? then
+                status = case Project::Status::status_number(cols[idx])
+                         when 0
+                           "reviewing"
+                         when 1
+                           "uploaded"
+                         when 2
+                           "uploaded"
+                         when 3
+                           "reviewing"
+                         when 4
+                           "reviewing"
+                         when 5
+                           "reviewing"
+                         when 6
+                           "preview available"
+                         when 7
+                           "approved"
+                         when 8
+                           "released"
+                         when 9
+                           "released"
+                         end
+              else
+                status = cols[idx]
+              end
               line.push status
             elsif idx.nil? then
               puts "No column for #{k}"
@@ -347,28 +353,34 @@ class Formatter
               end
               line.push stage
             elsif k == "Status" then
-              status = case Project::Status::status_number(cols[idx])
-                       when 0
-                         "reviewing"
-                       when 1
-                         "uploaded"
-                       when 2
-                         "uploaded"
-                       when 3
-                         "reviewing"
-                       when 4
-                         "reviewing"
-                       when 5
-                         "reviewing"
-                       when 6
-                         "preview available"
-                       when 7
-                         "approved"
-                       when 8
-                         "released"
-                       when 9
-                         "released"
-                       end
+              status_num = Project::Status::status_number(cols[idx])
+              if !status_num.nil? then
+                status = case status_num
+                         when 0
+                           "reviewing"
+                         when 1
+                           "uploaded"
+                         when 2
+                           "uploaded"
+                         when 3
+                           "reviewing"
+                         when 4
+                           "reviewing"
+                         when 5
+                           "reviewing"
+                         when 6
+                           "preview available"
+                         when 7
+                           "approved"
+                         when 8
+                           "released"
+                         when 9
+                           "released"
+                         end
+              else
+                status = cols[idx]
+              end
+              status = cols[idx]
               line.push status
             elsif idx.nil? then
               puts "No column for #{k}"
