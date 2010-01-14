@@ -146,7 +146,7 @@ sub bowtie2sam {
 			      $bowtie_chr = $bowtie[2];
 			  }
 			  if (($read1_chr =~ /\Q$bowtie_chr/) && ($bowtie[1] eq $read1_strand)) {
-			      #print $bowtie_line . "\n";
+			      print $bowtie_line . "\n";
 			      #print STDERR "wrote: $bowtie_line\n";
 			      $lines_written++;
 			      $read1_found = 1;
@@ -164,7 +164,7 @@ sub bowtie2sam {
 			  }
 			  if (($read2_chr =~ /\Q$bowtie_chr/) && ($bowtie[1] eq $read2_strand)) {
 
-			      #print $bowtie_line . "\n";
+			      print $bowtie_line . "\n";
 			      #print STDERR "wrote: $bowtie_line\n";
 			      $lines_written++;
 			      $read2_found = 1;
