@@ -49,7 +49,7 @@ sub bowtie2sam {
   `sort $bowtie_file > $tmp_bowtie`;
   
   print STDERR "Done.\n";
-  print STDERR "Replacing underscores with colons...";
+  print STDERR "Replacing underscores with colons in spa file...";
   `sed s/_/\:/g $spa_file > $sed_spa`;
   print STDERR "Done.\n";
 
@@ -105,7 +105,7 @@ sub bowtie2sam {
 	      while ((!$read1_found) || (!$read2_found)) {
 		  #print STDERR $bowtie_line . "\n";
 		  #print STDERR $read_id . "\n";
-
+#		  die;
 		  while ($bowtie_line !~ /\Q$read_id/) {
 		      #keep reading file until a matching read is found.  
 		      chomp($bowtie_line);
@@ -113,7 +113,7 @@ sub bowtie2sam {
 		      @bowtie = split(/\t/,$bowtie_line);
 		      #use Data::Dumper;
 		      #print STDERR Dumper(@bowtie);
-		      my ($bowtie_read) = ($bowtie[0] =~ /\w:(\d+:\d+:\d+)\/.+/);
+		      my ($bowtie_read) = ($bowtie[0] =~ /\w:(\d+:\d+:\d+#\d+)\/.+/);
 		      #print STDERR "BOWTIE READ: \"$bowtie_read\" vs \"$read_id\"\n";
 		      if ($bowtie_read gt $read_id) {
 			  #since the file is sorted, then we can test if we've
@@ -134,17 +134,19 @@ sub bowtie2sam {
 		  #use Data::Dumper;
 		  #print STDERR Dumper(@bowtie);
 		  #print STDERR "BOWTIE id match at line $lines_read_bowtie: " . $bowtie[2] . ", " . $bowtie[0] . "\n";
+		  #die if $lines_read_bowtie > 8;
 		  if (!$skip_flag) {
 		      if (!$read1_found) {
 			  my @bowtie_chr_spa = split("_",$bowtie[2]);
 			  my $bowtie_chr = "";
 			  if (scalar(@bowtie_chr_spa) > 1) {
-			      $bowtie_chr = $bowtie_chr_spa[1] . ":" . $bowtie_chr_spa[2] . ":" . $bowtie_chr_spa[3] . ":" . $bowtie_chr_spa[6] . ":" . $bowtie_chr_spa[7];
+			      #old $bowtie_chr = $bowtie_chr_spa[1] . ":" . $bowtie_chr_spa[2] . ":" . $bowtie_chr_spa[3] . ":" . $bowtie_chr_spa[6] . ":" . $bowtie_chr_spa[7];
+			      $bowtie_chr = $bowtie_chr_spa[1] . ":" . $bowtie_chr_spa[2] . ":" . $bowtie_chr_spa[3] . ":" . $bowtie_chr_spa[4] . ":" . $bowtie_chr_spa[5];
 			  } else {
 			      $bowtie_chr = $bowtie[2];
 			  }
 			  if (($read1_chr =~ /\Q$bowtie_chr/) && ($bowtie[1] eq $read1_strand)) {
-			      print $bowtie_line . "\n";
+			      #print $bowtie_line . "\n";
 			      #print STDERR "wrote: $bowtie_line\n";
 			      $lines_written++;
 			      $read1_found = 1;
@@ -156,13 +158,13 @@ sub bowtie2sam {
 			  my @bowtie_chr_spa = split("_",$bowtie[2]);
 			  my $bowtie_chr = "";
 			  if (scalar(@bowtie_chr_spa) > 1) {
-			      $bowtie_chr = $bowtie_chr_spa[1] . ":" . $bowtie_chr_spa[2] . ":" . $bowtie_chr_spa[3] . ":" . $bowtie_chr_spa[6] . ":" . $bowtie_chr_spa[7];
+			      $bowtie_chr = $bowtie_chr_spa[1] . ":" . $bowtie_chr_spa[2] . ":" . $bowtie_chr_spa[3] . ":" . $bowtie_chr_spa[4] . ":" . $bowtie_chr_spa[5];
 			  } else {
 			      $bowtie_chr = $bowtie[2];
 			  }
 			  if (($read2_chr =~ /\Q$bowtie_chr/) && ($bowtie[1] eq $read2_strand)) {
 
-			      print $bowtie_line . "\n";
+			      #print $bowtie_line . "\n";
 			      #print STDERR "wrote: $bowtie_line\n";
 			      $lines_written++;
 			      $read2_found = 1;
