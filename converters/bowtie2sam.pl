@@ -354,7 +354,7 @@ sub some_processing {
   #add a tag for the junction
   #junction, if present, will go into the Y0 tag
   my @c = split("_", @{$t}[2]);
-  push (@$s, "Y0:Z:" . @{$t}[2]) if (@c > 1);
+  push (@$s, "Y0:Z:" . @{$t}[2]) if (@{$t}[2] =~ /\w_\d+_\d+_\d+_\d+_\w+/ );
 
   return $nm;
 }
@@ -363,21 +363,23 @@ sub get_cigar {
     my ($rel_start, $seq, $junction) = @_;
     my $read_length = length($seq);
     my $cigar = "";
-    my @c = split("_", $junction);
 
-    if (@c==1) {
-	$cigar = $read_length . "M";
-    } else {
+    if ($junction =~ /\w_\d+_\d+_\d+_\d+_\w+/) {
+	my @c = split("_", $junction);
+    
 	#its a junction read like this:
+	#chr2R_12892403_12892472_12892534_12892603_DaGLSVDb
 	#dm3_chr4_162722_162753_+>dm3_chr4_162825_162856_+_A
-	my $fiveprimejxn_start = $c[2]+1;
-	my $fiveprimejxn_end   = $c[3];
-	my $threeprimejxn_start = $c[6]+1;
-	my $threeprimejxn_end   = $c[7];
+	my $fiveprimejxn_start = $c[1]+1;
+	my $fiveprimejxn_end   = $c[2];
+	my $threeprimejxn_start = $c[3]+1;
+	my $threeprimejxn_end   = $c[4];
 	my $read_length_A = $fiveprimejxn_end-($fiveprimejxn_start+$rel_start)+1;
 	my $intron_length = $threeprimejxn_start-$fiveprimejxn_end-1;
 	my $read_length_B = $read_length - $read_length_A;
 	$cigar .= $read_length_A . "M" . $intron_length . "N" . $read_length_B . "M";
+    } else {
+	$cigar = $read_length . "M";
     }
     return $cigar;
 
@@ -386,14 +388,18 @@ sub get_cigar {
 sub get_chrom_and_start {
 
     my ($chrom, $start) = @_;
-    my @c = split("_", $chrom);
     $start++ if $zerobased;  #dm3 coords are 0-based, but we need 1-based
     use Data::Dumper;
-    if (@c>1) {
+
+    if ($chrom =~ /\w_\d+_\d+_\d+_\d+_\w+/) {
+	my @c = split("_", $chrom);
+      #brenton's new jxn reads chr2R_12892403_12892472_12892534_12892603_DaGLSVDb
+
+    #if (@c>1) {
 	#there's a junction read
 	#assuming that junctions are same chrom
-	$start += $c[2];
-	$chrom = $c[1];
+	$start += $c[1];
+	$chrom = $c[0];
     }
     return ($chrom, $start);
 }
