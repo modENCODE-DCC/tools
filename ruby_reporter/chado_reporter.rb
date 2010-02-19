@@ -527,6 +527,18 @@ class ChadoReporter
     return filtered_antibodies
   end
 
+  def collect_compounds(data, xschema)
+    filtered_compounds = Array.new
+    compounds = data.find_all { |d| d["type"] =~ /MO:Compound/ }
+    compounds.each { |d|
+      attrs = self.get_attributes_for_datum(d["data_id"], xschema)
+      d["attributes"] = attrs
+      filtered_compounds.push d
+    }
+    filtered_compounds = filtered_compounds.uniq_by { |d| d["attributes"].nil? ? nil : d["attributes"] }
+    return filtered_compounds
+  end
+
   # Get any microarrays attached to this experiment; requires the correct type
   # (modencode:ADF) and for it to be from a wiki page with an "official name"
   # field

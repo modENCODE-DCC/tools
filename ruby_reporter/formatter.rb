@@ -31,6 +31,7 @@ class Formatter
       cols = Array.new
       id = e["xschema"].match(/_(\d+)_/)[1]
       id += " deprecated by #{e["deprecated"]}" if e["deprecated"]
+      id += " superseded by #{e["superseded"]}" if e["superseded"]
       e["status"] = "deprecated" if e["deprecated"]
       cols.push id
       cols.push e["project"]
@@ -307,6 +308,7 @@ class Formatter
           col_order.each { |k|
             idx = col_index[k]
             cols[idx] = cols[idx].to_s.gsub(/N\/A/, "") unless (idx.nil? || cols[idx].nil?)
+            cols[idx] = cols[idx].to_s.gsub(/^\s*|\s*$/, "") unless (idx.nil? || cols[idx].nil?)
             if k == "Experimental Factor" then
               factors = Array.new
               antibody = cols[col_index["Antibody"]].gsub(/N\/A/, "").gsub(/No Antibody Control/, "control")

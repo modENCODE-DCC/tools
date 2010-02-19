@@ -33,9 +33,6 @@ else
       else
         if (File.exists?('breakpoint1.dmp')) then
           exps = Marshal.load(File.read('breakpoint1.dmp'))
-          #######
-          exps = exps.find_all { |e| e["xschema"] =~ /_2332_|_2333_/ }
-          ######
         else
           # Get a list of all the experiments (and their properties)
           exps = r.get_basic_experiments
@@ -129,6 +126,8 @@ else
           # correct type (modencode:ADF) and for it to be from a wiki page
           # with an "official name" field
           e["arrays"] = r.collect_microarrays(data, e["xschema"])
+
+          e["compound"] = r.collect_compounds(data, e["xschema"])
 
         }
         print "\n"
@@ -224,6 +223,19 @@ else
     e["rnai_targets"] = Array.new if e["rnai_targets"].nil?
     e["sra_ids"] = Array.new if e["sra_ids"].nil?
 
+
+    filtered_compounds = Array.new
+    e["compound"].each { |compound|
+      if compound.is_a?(Hash) then
+        cmp = "#{compound["name"]}=#{compound["value"]}"
+        concentration_unit = compound["attributes"].find { |attr| attr["name"] == "ConcentrationUnit" }
+        cmp += concentration_unit["value"] unless concentration_unit.nil?
+        filtered_compounds.push cmp
+      else
+        filtered_compounds.push e["compound"]
+      end
+    }
+    e["compound"] = filtered_compounds
     e["specimens"].each { |sp|
       ####
       # Hacky workarounds for poorly typed data
@@ -453,6 +465,7 @@ else
         end
       end
 
+
       #############
       #  SRA IDs  #
       #############
@@ -553,6 +566,7 @@ else
   # Search through all of the protocol types to figure out the type of the 
   # experiment
   exps.each { |e|
+    # hybridization - ChIP = RNA tiling array
     e["experiment_types"] = Array.new
     protocol_types = e["protocol_types"].map { |row| row["type"] }
     # extraction + sequencing + reverse transcription - ChIP = RTPCR
@@ -598,12 +612,15 @@ else
       end
     end
 
-    # hybridization - ChIP = RNA tiling array
     if 
       protocol_types.find { |pt| pt =~ /hybridization/ } &&
       protocol_types.find { |pt| pt =~ /immunoprecipitation/ }.nil?
       then
-      e["experiment_types"].push "RNA tiling array"
+      if e["compound"] && e["compound"].find { |compound| compound["name"] =~ /sodium chloride/ } then
+        e["experiment_types"].push "Chromatin-chip"
+      else
+        e["experiment_types"].push "RNA tiling array"
+      end
     end
 
     # annotation = Computational annotation
@@ -702,14 +719,14 @@ else
   # database, which is separate from Chado
   # Also, grab creation and release dates
   dbh = DBI.connect("dbi:Pg:dbname=pipeline_dev;host=heartbroken.lbl.gov", "db_public", "ir84#4nm")
-  sth = dbh.prepare("SELECT status, deprecated_project_id, created_at, updated_at FROM projects WHERE id = ?")
+  sth = dbh.prepare("SELECT status, deprecated_project_id, superseded_project_id, created_at, updated_at FROM projects WHERE id = ?")
   sth_release_date = dbh.prepare("SELECT MAX(c.end_time) AS release_date FROM commands c 
                                  INNER JOIN projects p ON p.id = c.project_id 
                                  WHERE c.type = 'Release' AND c.status = 'released' GROUP BY p.id HAVING p.id = ?")
   exps.clone.each { |e|
     pipeline_id = e["xschema"].match(/_(\d+)_/)[1].to_i
     sth.execute(pipeline_id)
-    (status, deprecated, created_at, updated_at) = sth.fetch_array
+    (status, deprecated, superseded, created_at, updated_at) = sth.fetch_array
     if status.nil? then
       # Chado entry, but deleted from pipeline
       exps.delete(e)
@@ -717,6 +734,7 @@ else
     end
     e["status"] = status
     e["deprecated"] = (deprecated != "" && !deprecated.nil?) ? deprecated : false
+    e["superseded"] = (superseded != "" && !superseded.nil?) ? superseded : false
     sth_release_date.execute(pipeline_id)
     release_date = sth_release_date.fetch_array
     release_date = release_date.nil? ? updated_at : release_date[0]
@@ -732,7 +750,7 @@ else
 
   # Get any projects that aren't in Chado yet
   chado_ids = exps.map { |e| e["xschema"].match(/_(\d+)_/)[1].to_i }
-  sth = dbh.prepare("SELECT id, name, status, pi, lab, created_at, deprecated_project_id FROM projects")
+  sth = dbh.prepare("SELECT id, name, status, pi, lab, created_at, deprecated_project_id, superseded_project_id FROM projects")
   sth.execute()
   sth.fetch_all.each { |row|
     next if chado_ids.include?(row["id"].to_i)
@@ -744,6 +762,7 @@ else
       "lab" => row["lab"].split(/,/)[0],
       "created_at" => Date.parse(row["created_at"].to_s).to_s,
       "deprecated" => (row["deprecated_project_id"] != "" && !row["deprecated_project_id"].nil?) ? row["deprecated_project_id"] : false,
+      "superseded" => (row["superseded_project_id"] != "" && !row["superseded_project_id"].nil?) ? row["superseded_project_id"] : false,
       "released_at" => "",
       "organisms" => [],
       "types" => [],
@@ -769,6 +788,8 @@ else
   exps.sort! { |e1, e2| e1["xschema"].match(/_(\d+)_/)[1].to_i <=> e2["xschema"].match(/_(\d+)_/)[1].to_i }
   File.open('breakpoint5.dmp', 'w') { |f| Marshal.dump(exps, f) }
 end
+
+
 # Output to HTML
 if ARGV[0] && ARGV[0].length > 0 && Formatter.respond_to?("format_#{ARGV[0]}") then
   Formatter::send("format_#{ARGV[0]}", exps, ARGV[1])
