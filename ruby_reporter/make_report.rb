@@ -170,14 +170,9 @@ else
   # those protocols.
   puts "Checking for referenced submissions."
   exps.each { |e|
-    referenced_factors = r.get_experimental_factors_for_schema(e["xschema"])
     old_specimens = Array.new
-    referenced_factors.each { |factor|
-      puts "Getting reference from #{e["xschema"]} to #{factor["xschema"]}"
-      d = r.get_referenced_factor_for_schema(factor["xschema"], factor["name"])
-      old_specimens += r.collect_specimens(d, factor["xschema"])
-    }
 
+    seen_column_names = Hash.new { |h, k| h[k] = Array.new }
     referenced_specimens = e["specimens"].find_all { |sp| sp["attributes"] && sp["attributes"].find { |attr| attr["type"] == "modencode:reference" } }
     referenced_specimens.each { |rsp|
       # Get the old experiment ID from the specimen's DBXref
@@ -192,6 +187,7 @@ else
       # Find all of the specimens in the old_data; this is the same as the code
       # that gets the specimens for the current experiment
       old_specimens += r.collect_specimens(old_data, old_experiment["xschema"])
+      old_specimens.each { |s| seen_column_names[s["name"]].push s["value"] }
 
       old_specimens = old_specimens.uniq_by { |d| d["attributes"].nil? ? nil : d["attributes"] }
 
@@ -202,6 +198,24 @@ else
       # Delete the current specimen, since we've replaced it with the old one
       e["specimens"].delete(rsp)
     }
+
+    referenced_factors = r.get_experimental_factors_for_schema(e["xschema"])
+
+    referenced_factors.each { |factor|
+      puts "Getting reference from #{e["xschema"]} to #{factor["xschema"]}"
+      if seen_column_names[factor["name"]] then
+        seen_column_names[factor["name"]].each { |value|
+          d = r.get_referenced_factor_for_schema(factor["xschema"], factor["name"], value)
+          old_specimens += r.collect_specimens(d, factor["xschema"])
+        }
+      else
+        d = r.get_referenced_factor_for_schema(factor["xschema"], factor["name"])
+        old_specimens += r.collect_specimens(d, factor["xschema"])
+      end
+    }
+
+
+
     e["specimens"] += old_specimens
   }
   puts "Done."
@@ -297,7 +311,8 @@ else
       # Get the values of tissue, strain, and stage, rather than the whole datum
       e["stage"]  += stage.map  { |s| s["value"]  } unless stage.size == 0
       e["tissue"] += tissue.map { |t| t["value"] } unless tissue.size == 0
-      e["strain"] += strain.map { |s| r.unescape(s["value"]) } unless strain.size == nil
+      strain.each { |attr| attr["type"] = "MO:strain_or_line" }
+      e["strain"] += strain unless strain.size == 0
 
       # Okay, now we get into the complex heuristics where we try to sort out the reagent
       # information based on various types and headings
@@ -394,7 +409,9 @@ else
         if strain_expand then
           strain = sp["attributes"].find_all { |attr| attr["attr_group"] == strain_expand["attr_group"] && attr["heading"] == "official name" }
         end
-        e["strain"] += strain.map { |s| r.unescape(s["value"]) } unless strain.size == 0
+        strain.each { |attr| attr["type"] = "MO:strain_or_line" }
+        strain.each { |attr| attr["title"] = sp["name"] }
+        e["strain"] += strain unless strain.size == 0
       end
       # Are there any "Parameter/Result Value" or "Source/Sample Name" columns with a type 
       # containing "strain_or_line", a value containing "Strain", and an attribute with a 
@@ -404,7 +421,9 @@ else
         if sp["value"] =~ /Strain/ then
           strain = sp["attributes"].find_all { |attr| attr["heading"] == "strain" } # Engineered strain
           strain = sp["attributes"].find_all { |attr| attr["heading"] == "official name" } if strain.size == 0  # Regular strain pages
-          e["strain"] += strain.map { |s| r.unescape(s["value"]) } unless strain.size == 0
+          strain.each { |attr| attr["type"] = sp["type"] }
+          strain.each { |attr| attr["title"] = sp["name"] }
+          e["strain"] += strain unless strain.size == 0
         end
       end
       # Are there any "Parameter/Result Value" or "Source/Sample Name" columns with a type 
@@ -413,7 +432,9 @@ else
       if sp["heading"] =~ /((Parameter|Result) Value)|((Source|Sample) Name)/ && sp["type"] =~ /MO:(whole_)?organism/ then
         strain = sp["attributes"].find_all { |attr| attr["heading"] == "strain" } # Engineered strain
         strain = sp["attributes"].find_all { |attr| attr["heading"] == "official name" } if strain.size == 0  # Regular strain pages
-        e["strain"] += strain.map { |s| r.unescape(s["value"]) } unless strain.size == 0
+        strain.each { |attr| attr["type"] = sp["type"] }
+        strain.each { |attr| attr["title"] = sp["name"] }
+        e["strain"] += strain unless strain.size == 0
       end
       # It's not N/A if anything was found, duh.
       e["strain"].delete("N/A") if e["strain"].uniq.size > 1
@@ -532,6 +553,14 @@ else
     if e["specimens"].find { |sp2| sp2["type"] =~ /MO:(whole_)?organism/ } && e["tissue"].size == 0 && e["sra_ids"].size == 0 then
       e["tissue"].push "whole organism" 
     end
+    #
+    # If we found multiple strains, and some are named strain and some are named 
+    # something else (like tissue), then keep only the strain-named ones
+    strain_titled_strains = e["strain"].find_all { |s| s["title"] =~ /strain/ }
+    if strain_titled_strains.size > 0 && e["strain"].size > strain_titled_strains.size then
+      e["strain"] = strain_titled_strains
+    end
+    e["strain"] = e["strain"].map { |strain| strain.is_a?(Hash) ? strain["value"] : strain }
 
     e["array_platform"].push("N/A") if e["array_platform"].size == 0
     e["strain"].uniq!
@@ -541,7 +570,9 @@ else
     e["compound"].uniq!
     e["growth_condition"].uniq!
     e["stage"].uniq! unless e["stage"].nil?
+
   }
+
 
   # Figure out DNAse treatment based on protocol names
   exps.each { |e|

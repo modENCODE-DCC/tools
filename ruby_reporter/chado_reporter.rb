@@ -121,14 +121,25 @@ class ChadoReporter
     return ret
   end
 
-  def get_referenced_factor_for_schema(schema, name)
-    sth = @dbh.prepare("
-      SELECT d.data_id, d.heading, d.name, d.value, cv.name || ':' || cvt.name AS type FROM #{schema}.data d
-      INNER JOIN #{schema}.cvterm cvt ON d.type_id = cvt.cvterm_id
-      INNER JOIN #{schema}.cv ON cvt.cv_id = cv.cv_id
-      WHERE d.name = ?
-    ")
-    sth.execute(name)
+  def get_referenced_factor_for_schema(schema, name, value = nil)
+    sth = nil
+    if value then
+      sth = @dbh.prepare("
+        SELECT d.data_id, d.heading, d.name, d.value, cv.name || ':' || cvt.name AS type FROM #{schema}.data d
+        INNER JOIN #{schema}.cvterm cvt ON d.type_id = cvt.cvterm_id
+        INNER JOIN #{schema}.cv ON cvt.cv_id = cv.cv_id
+        WHERE d.name = ? AND d.value = ?
+      ")
+      sth.execute(name, value)
+    else
+      sth = @dbh.prepare("
+        SELECT d.data_id, d.heading, d.name, d.value, cv.name || ':' || cvt.name AS type FROM #{schema}.data d
+        INNER JOIN #{schema}.cvterm cvt ON d.type_id = cvt.cvterm_id
+        INNER JOIN #{schema}.cv ON cvt.cv_id = cv.cv_id
+        WHERE d.name = ?
+      ")
+      sth.execute(name)
+    end
     ret = sth.fetch_all.map { |row| row.to_h }
     sth.finish
 
