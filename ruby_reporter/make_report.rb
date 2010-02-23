@@ -202,19 +202,17 @@ else
     referenced_factors = r.get_experimental_factors_for_schema(e["xschema"])
 
     referenced_factors.each { |factor|
-      puts "Getting reference from #{e["xschema"]} to #{factor["xschema"]}"
-      if seen_column_names[factor["name"]] then
-        seen_column_names[factor["name"]].each { |value|
+      puts "  Getting reference from #{e["xschema"]} to #{factor["xschema"]}"
+      if seen_column_names[factor["name"]] && seen_column_names[factor["name"]].size > 0 then
+        seen_column_names[factor["name"]].each { |column, value|
           d = r.get_referenced_factor_for_schema(factor["xschema"], factor["name"], value)
-          old_specimens += r.collect_specimens(d, factor["xschema"])
+          d.each { |schema, data| old_specimens += r.collect_specimens(data, schema) }
         }
       else
         d = r.get_referenced_factor_for_schema(factor["xschema"], factor["name"])
-        old_specimens += r.collect_specimens(d, factor["xschema"])
+        d.each { |schema, data| old_specimens += r.collect_specimens(data, schema) }
       end
     }
-
-
 
     e["specimens"] += old_specimens
   }
@@ -250,6 +248,7 @@ else
       end
     }
     e["compound"] = filtered_compounds
+
     e["specimens"].each { |sp|
       ####
       # Hacky workarounds for poorly typed data
@@ -277,7 +276,7 @@ else
         sp["type"] = ""
         sp["type"] += " cell_line" if sp["attributes"].find { |attr| 
           (attr["heading"] =~ /Characteristics?/i && attr["value"] =~ /^CellLine/) ||
-            attr["type"] =~ /MO:cell_line/
+            attr["type"] =~ /MO:cell_line|MO:CellLine/
         }
         sp["type"] += " strain" if sp["attributes"].find { |attr| 
           (attr["heading"] =~ /Characteristics?/i && attr["value"] =~ /Strain/) ||
@@ -449,16 +448,16 @@ else
       # its value as a cell_line. If no "official name" is found in the same group, look
       # for any "official name" attribute of this specimen (since it's already typed as
       # cell_line) and use that instead.
-      if sp["type"] =~ /cell_line/ then
+      if sp["type"] =~ /cell_line|CellLine/ then
         # First, try to find a typed attribute:
         cell_line_expand = sp["attributes"].find { |attr| 
           (attr["heading"] =~ /Characteristics?/i && attr["value"] =~ /^CellLine/) ||
-            attr["type"] =~ /MO:cell_line/
+            attr["type"] =~ /MO:cell_line|MO:CellLine/
         }
         if cell_line_expand then
           cell_line = sp["attributes"].find_all { |attr| attr["attr_group"] == cell_line_expand["attr_group"] && attr["heading"] == "official name" }
         end
-        blank_cell_line = sp["attributes"].find { |attr| attr["type"] =~ /MO:cell_line/ }
+        blank_cell_line = sp["attributes"].find { |attr| attr["type"] =~ /MO:cell_line|MO:CellLine/ }
         cell_line = sp["attributes"].find_all { |attr| attr["heading"] == "official name" } if (blank_cell_line.nil? && (cell_line.nil? || cell_line.size == 0))
         e["cell_line"].push cell_line.map { |t| r.unescape(t["value"]) } unless cell_line.size == 0
       end
@@ -524,7 +523,7 @@ else
       # "N/A" to the list of strains if we haven't otherwise found one yet. We
       # can clean this up later (see "It's not N/A if anything was found",
       # above).
-      if sp["type"] =~ /cell_line/ && e["strain"].size == 0 then
+      if sp["type"] =~ /CellLine|cell_line/ && e["strain"].size == 0 then
         # Cell lines don't have to have strains
         e["strain"] += [ "N/A" ]
       end
@@ -583,6 +582,7 @@ else
     end
   }
 
+
   # Get any GEO IDs from Chado
   puts "  Getting GEO IDs for submissions"
   exps.each { |e|
@@ -592,7 +592,6 @@ else
     e["GSM"] += geo_ids unless geo_ids.nil?
   }
   puts "\n"
-
 
   # Search through all of the protocol types to figure out the type of the 
   # experiment
@@ -660,7 +659,8 @@ else
       then
       e["experiment_types"].push "Computational annotation"
       # Also get rid of any reagents, since this really just analyzing old data
-      if e["experiment_types"].size == 1 then
+      # Juuust kidding
+      if false && e["experiment_types"].size == 1 then
         e["strain"] = [ "N/A" ]
         e["tissue"] = [ "N/A" ]
         e["stage"] = [ "N/A" ]
@@ -781,6 +781,7 @@ else
 
   # Get any projects that aren't in Chado yet
   chado_ids = exps.map { |e| e["xschema"].match(/_(\d+)_/)[1].to_i }
+
   sth = dbh.prepare("SELECT id, name, status, pi, lab, created_at, deprecated_project_id, superseded_project_id FROM projects")
   sth.execute()
   sth.fetch_all.each { |row|
@@ -819,7 +820,6 @@ else
   exps.sort! { |e1, e2| e1["xschema"].match(/_(\d+)_/)[1].to_i <=> e2["xschema"].match(/_(\d+)_/)[1].to_i }
   File.open('breakpoint5.dmp', 'w') { |f| Marshal.dump(exps, f) }
 end
-
 
 # Output to HTML
 if ARGV[0] && ARGV[0].length > 0 && Formatter.respond_to?("format_#{ARGV[0]}") then

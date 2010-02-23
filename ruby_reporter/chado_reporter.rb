@@ -1,3 +1,6 @@
+require 'rubygems'
+require 'dbi'
+
 class ChadoReporter
   def initialize
     @dbh = DBI.connect("dbi:Pg:dbname=modencode_chado;host=heartbroken.lbl.gov", "db_public", "ir84#4nm") unless @dbh
@@ -154,6 +157,15 @@ class ChadoReporter
         }
       end
     end
+
+    # Recurse into even older submissions
+    ret = { schema => ret }
+    referenced_factors = self.get_experimental_factors_for_schema(schema)
+    referenced_factors.each { |factor|
+      puts "      Getting (recursed) reference from #{schema} to #{factor["xschema"]}"
+      ret = ret.merge(self.get_referenced_factor_for_schema(factor["xschema"], factor["name"], value))
+      puts "      Done."
+    }
     return ret
   end
 
@@ -439,7 +451,7 @@ class ChadoReporter
   # matches the expected style for specimen data
 
   def collect_specimens(data, xschema)
-    specimens = data.find_all { |d| d["type"] =~ /MO:((whole_)?organism(_part)?)|(developmental_)?stage|(worm|fly)_development:|RNA|cell(_line)?|strain_or_line|BioSample|modencode:ADF|MO:genomic_DNA|SO:RNAi_reagent|MO:GrowthCondition|modencode:ShortReadArchive_project_ID(_list)? \(SRA\)/ }
+    specimens = data.find_all { |d| d["type"] =~ /MO:((whole_)?organism(_part)?)|(developmental_)?stage|(worm|fly)_development:|RNA|cell(_line)?|strain_or_line|BioSample|modencode:ADF|MO:genomic_DNA|SO:RNAi_reagent|MO:GrowthCondition|modencode:ShortReadArchive_project_ID(_list)? \(SRA\)|MO:CellLine/ }
     missing = Array.new
     filtered_specimens = Array.new
     # Make sure that the data we've found of these types actually matches an
