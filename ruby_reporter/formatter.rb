@@ -32,6 +32,7 @@ class Formatter
       id = e["xschema"].match(/_(\d+)_/)[1]
       id += " deprecated by #{e["deprecated"]}" if e["deprecated"]
       id += " superseded by #{e["superseded"]}" if e["superseded"]
+      e["status"] = "superseded" if e["superseded"]
       e["status"] = "deprecated" if e["deprecated"]
       cols.push id
       cols.push e["project"]
@@ -291,12 +292,12 @@ class Formatter
         "Description", "Project", "Lab", "Assay", "Data Type",
         "Experimental Factor", "Organism", "Cell Line", "Strain",
         "Tissue", "Stage/Treatment", "Date Data Submitted", "Release Date",
-        "Status", "Submission ID", "GEO/SRA IDs"
+        "Status", "Submission ID", "GEO/SRA IDs", "GFF Files"
       ]
       col_index = Hash.new
       colors = [ "#DDDDFF", "#DDDDDD" ]
 
-      Formatter::format(exps, false, {"Description" => "uniquename", "Growth Condition" => "growth_condition", "DNAse Treatment" => "dnase_treatment"}) { |cols|
+      Formatter::format(exps, false, {"Description" => "uniquename", "Growth Condition" => "growth_condition", "DNAse Treatment" => "dnase_treatment", "GFF Files" => "gff"}) { |cols|
         if header then
           cols.each_index { |idx| col_index[cols[idx]] = idx }
           f.puts col_order.join("\t")

@@ -1,5 +1,6 @@
 require 'rubygems'
 require 'dbi'
+require 'pp'
 
 class ChadoReporter
   def initialize
@@ -451,7 +452,7 @@ class ChadoReporter
   # matches the expected style for specimen data
 
   def collect_specimens(data, xschema)
-    specimens = data.find_all { |d| d["type"] =~ /MO:((whole_)?organism(_part)?)|(developmental_)?stage|(worm|fly)_development:|RNA|cell(_line)?|strain_or_line|BioSample|modencode:ADF|MO:genomic_DNA|SO:RNAi_reagent|MO:GrowthCondition|modencode:ShortReadArchive_project_ID(_list)? \(SRA\)|MO:CellLine/ }
+    specimens = data.find_all { |d| d["type"] =~ /MO:((whole_)?organism(_part)?)|(developmental_)?stage|(worm|fly)_development:|RNA|cell(_line)?|strain_or_line|BioSample|modencode:ADF|MO:genomic_DNA|SO:RNAi_reagent|MO:GrowthCondition|modencode:ShortReadArchive_project_ID(_list)? \(SRA\)|MO:CellLine|modencode:GEO_record/ }
     missing = Array.new
     filtered_specimens = Array.new
     # Make sure that the data we've found of these types actually matches an
@@ -511,6 +512,8 @@ class ChadoReporter
         # Ignore RNA collections
       elsif d["value"].length == 0
         # Ignore empty (probably anonymous) cells
+      elsif d["type"] == "modencode:GEO_record"
+        # Ignore GEO records that aren't references to old submissions
       else
         # Track any specimens that didn't fall into one of the above categories
         # so we can add support for them to the code.
@@ -577,6 +580,38 @@ class ChadoReporter
     }
     filtered_arrays = filtered_arrays.uniq_by { |d| d["attributes"].nil? ? nil : d["attributes"] }
     return filtered_arrays
+  end
+
+  def collect_gff(schema)
+    sth = @dbh.prepare("
+                       SELECT d.value FROM #{schema}.data d
+                       INNER JOIN #{schema}.cvterm cvt ON d.type_id = cvt.cvterm_id
+                       WHERE cvt.name = 'GFF3'
+                       GROUP BY d.value
+                       ")
+    sth.execute
+    gffs = sth.fetch_all.flatten
+    sth.finish
+    return gffs
+  end
+
+  def recursively_find_referenced_specimens(curschema, specimens, all_specimens = Hash.new { |h,k| h[k] = Array.new } )
+    referenced_specimens = specimens.find_all { |sp| sp["attributes"] && sp["attributes"].find { |attr| attr["type"] == "modencode:reference" } }
+    # Save all the unreferencd specimens as members of this schema
+    all_specimens[curschema] += (specimens - referenced_specimens)
+    referenced_specimens.each { |refspecimen|
+      old_experiment_id = refspecimen["attributes"].find { |attr| attr["type"] == "modencode:reference" }["value"].split(/:/)[0]
+      xschema = "modencode_experiment_#{old_experiment_id}_data"
+      puts "Finding reference to #{xschema}:#{refspecimen["value"]}"
+      potential_old_specimens = self.backtrack_datum_graph(xschema, refspecimen)
+      old_specimens = self.collect_specimens(potential_old_specimens, xschema)
+      self.recursively_find_referenced_specimens(xschema, old_specimens, all_specimens)
+    }
+    return all_specimens
+  end
+
+  def backtrack_datum_graph(schema, refspecimen)
+    return self.get_referenced_data_for_schema(schema, refspecimen["name"], refspecimen["value"])
   end
 end
 
