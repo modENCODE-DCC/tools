@@ -19,7 +19,7 @@ end
 r = ChadoReporter.new
 r.set_schema("reporting")
 
-dbh = DBI.connect("dbi:Pg:dbname=pipeline_dev;host=heartbroken.lbl.gov", "db_public", "ir84#4nm")
+dbh = DBI.connect("dbi:Pg:dbname=pipeline_dev;host=awol.lbl.gov;port=5433", "db_public", "ir84#4nm")
 if (File.exists?('breakpoint6.dmp')) then
   exps = Marshal.load(File.read('breakpoint6.dmp'))
 else
@@ -207,9 +207,11 @@ else
       filtered_compounds = Array.new
       e["compound"].each { |compound|
         if compound.is_a?(Hash) then
-          cmp = "#{compound["name"]}=#{compound["value"]}"
+          compound["name"].sub!(/ concentration$/, '')
+          cmp = "#{compound["value"]}"
           concentration_unit = compound["attributes"].find { |attr| attr["name"] == "ConcentrationUnit" }
           cmp += concentration_unit["value"] unless concentration_unit.nil?
+          cmp += " #{compound["name"]}"
           filtered_compounds.push cmp
         else
           filtered_compounds.push e["compound"]
@@ -595,10 +597,15 @@ else
         protocol_types.find { |pt| pt =~ /reverse_transcription/ } && 
         protocol_types.find { |pt| pt =~ /PCR(_amplification)?/ }
         then
-          if e["protocol_types"].find { |row| row["description"] =~ /RACE/ } then
-            e["experiment_types"].push "RACE"
+          if e["types"].size > 0 then
+            if e["protocol_types"].find { |row| row["description"] =~ /RACE/ } then
+              e["experiment_types"].push "RACE"
+            else
+              e["experiment_types"].push "RTPCR"
+            end
           else
-            e["experiment_types"].push "RTPCR"
+            e["experiment_types"].push "RACE sample creation"
+            e["types"] = [ "N/A (metadata only)" ]
           end
       end
 
@@ -618,7 +625,7 @@ else
         protocol_types.find { |pt| pt =~ /hybridization/ } &&
         protocol_types.find { |pt| pt =~ /immunoprecipitation/ }.nil?
         then
-        if e["compound"] && e["compound"].find { |compound| compound["name"] =~ /sodium chloride/ } then
+        if e["compound"] && e["compound"].find { |compound| compound =~ /sodium chloride/ } then
           e["experiment_types"].push "Chromatin-chip"
         else
           e["experiment_types"].push "RNA tiling array"
@@ -645,8 +652,10 @@ else
       # this is probably an RNA sample creation experiment from Celniker
       if 
         e["experiment_types"].size == 0 && 
-        protocol_types.find { |pt| pt =~ /grow/ } && 
-        protocol_types.find { |pt| pt =~ /grow/ }
+          (
+            protocol_types.find { |pt| pt =~ /grow/ } || 
+            protocol_types.find { |pt| pt =~ /organism_purification_protocol/ }
+          )
       then
         e["types"] = [ "N/A (metadata only)" ]
         e["experiment_types"].push "RNA sample creation"

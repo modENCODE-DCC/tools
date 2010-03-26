@@ -4,7 +4,7 @@ require 'pp'
 
 class ChadoReporter
   def initialize
-    @dbh = DBI.connect("dbi:Pg:dbname=modencode_chado;host=heartbroken.lbl.gov", "db_public", "ir84#4nm") unless @dbh
+    @dbh = DBI.connect("dbi:Pg:dbname=modencode_chado;host=awol.lbl.gov;port=5433", "db_public", "ir84#4nm") unless @dbh
   end
   def dbh
     @dbh
@@ -452,7 +452,8 @@ class ChadoReporter
   # matches the expected style for specimen data
 
   def collect_specimens(data, xschema)
-    specimens = data.find_all { |d| d["type"] =~ /MO:((whole_)?organism(_part)?)|(developmental_)?stage|(worm|fly)_development:|RNA|cell(_line)?|strain_or_line|BioSample|modencode:ADF|MO:genomic_DNA|SO:RNAi_reagent|MO:GrowthCondition|modencode:ShortReadArchive_project_ID(_list)? \(SRA\)|MO:CellLine|modencode:GEO_record/ }
+#    specimens = data.find_all { |d| d["type"] =~ /MO:((whole_)?organism(_part)?)|(developmental_)?stage|(worm|fly)_development:|RNA|cell(_line)?|strain_or_line|BioSample|modencode:ADF|MO:genomic_DNA|SO:RNAi_reagent|MO:GrowthCondition|modencode:ShortReadArchive_project_ID(_list)? \(SRA\)|MO:CellLine|modencode:GEO_record/ }
+    specimens = data
     missing = Array.new
     filtered_specimens = Array.new
     # Make sure that the data we've found of these types actually matches an
@@ -523,6 +524,7 @@ class ChadoReporter
     # Make sure the list of specimens is unique
     filtered_specimens = filtered_specimens.uniq_by { |d| d["attributes"].nil? ? d["value"] : d["attributes"] }
 
+    missing = missing.find_all { |d| d["type"] =~ /MO:((whole_)?organism(_part)?)|(developmental_)?stage|(worm|fly)_development:|RNA|cell(_line)?|strain_or_line|BioSample|modencode:ADF|MO:genomic_DNA|SO:RNAi_reagent|MO:GrowthCondition|modencode:ShortReadArchive_project_ID(_list)? \(SRA\)|MO:CellLine|modencode:GEO_record/ }
     # Whine about any missing specimens
     if missing.size > 0 then
       if missing.size > 1 then
