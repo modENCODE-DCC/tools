@@ -19,7 +19,7 @@ end
 r = ChadoReporter.new
 r.set_schema("reporting")
 
-dbh = DBI.connect("dbi:Pg:dbname=pipeline_dev;host=awol.lbl.gov;port=5433", "db_public", "ir84#4nm")
+dbh = DBI.connect("dbi:Pg:dbname=pipeline_dev;host=heartbroken.lbl.gov;port=5432", "db_public", "ir84#4nm")
 if (File.exists?('breakpoint6.dmp')) then
   exps = Marshal.load(File.read('breakpoint6.dmp'))
 else
