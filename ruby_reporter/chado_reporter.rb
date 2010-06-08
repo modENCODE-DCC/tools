@@ -260,10 +260,19 @@ class ChadoReporter
   end
 
   def get_available_experiments
-    sth = @dbh.prepare("SELECT experiment_id, uniquename, description, xschema FROM experiment")
-    sth.execute
-    ret = sth.fetch_all
-    sth.finish
+    sth_schemas = @dbh.prepare("SELECT DISTINCT schemaname FROM pg_tables WHERE schemaname LIKE 'modencode_experiment_%_data'")
+    sth_schemas.execute
+    ret = Array.new
+    sth_schemas.fetch_hash { |row|
+      sth = @dbh.prepare("SELECT experiment_id, uniquename, description FROM #{row["schemaname"]}.experiment")
+      sth.execute
+      h =  sth.fetch_hash
+      next if h.nil?
+      sth.finish
+      h["xschema"] = row["schemaname"]
+      ret.push h
+    }
+    sth_schemas.finish
     return ret
   end
 
@@ -299,11 +308,11 @@ class ChadoReporter
   def get_basic_experiments
     self.set_schema("reporting")
     # Generate PostgreSQL functions for querying all of the submissions at once
-    self.init_reporting_function
-    self.make_reporting_views(false)
+#    self.init_reporting_function
+#    self.make_reporting_views(false)
 
     # Get a list of all the experiments (and their properties)
-    exps = self.get_available_experiments.map { |exp| exp.to_h }
+    exps = self.get_available_experiments
     exps.each do |experiment|
       print "."
       $stdout.flush
