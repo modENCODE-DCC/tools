@@ -12,8 +12,10 @@ use ModENCODE::Fetcher::Rsync;
 use strict;
 
 sub new {
-  my ($class, $scheme, $command_id) = @_;
-  my $self = { 'log' => [] };
+  my ($class, $uri, $command_id) = @_;
+  my $scheme = $uri->scheme;
+  my $url = $uri->as_string;
+  my $self = { 'log' => [], 'url' => $url };
   if ($scheme eq "http" || $scheme eq "https" || $scheme eq "ftp") {
     bless $self, 'ModENCODE::Fetcher::Wget';
   } elsif ($scheme eq "rsync") {
@@ -22,6 +24,7 @@ sub new {
     return 0;
   }
 
+  $self->{'destination'} = File::Basename::basename($uri->path);
   $self->{'fifo_path_in'} = "/tmp/$command_id.in.fifo";
   $self->{'fifo_path_out'} = "/tmp/$command_id.out.fifo";
 
@@ -106,7 +109,21 @@ sub destination {
 
 sub destination_size {
   my $self = shift;
-  return -s $self->{'destination'};
+  if (-e $self->{'destination'}) {
+    return -s $self->{'destination'};
+  } else {
+    return -1;
+  }
+}
+
+sub exists {
+  my $self = shift;
+  my $size = $self->destination_size;
+  if ($size >= 0) {
+    return $size;
+  } else {
+    return "no";
+  }
 }
 
 sub DESTROY {
@@ -130,13 +147,13 @@ sub finish {
 }
 
 sub start_getting_url {
-  my ($self, $url) = @_;
+  my $self = shift;
+  my $url = $self->{'url'};
   $self->{'log'} = [];
   $self->{'cancel'} = 0;
   $self->{'failed'} = 0;
   $self->{'done'} = 0;
   my $uri = URI->new($url);
-  $self->{'destination'} = File::Basename::basename($uri->path);
 
   if (-e $self->{'fifo_path_in'}) {
 #    print STDERR "FIFO already exists, using existing " . $self->{'fifo_path_in'} . "\n";

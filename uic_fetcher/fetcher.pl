@@ -76,9 +76,18 @@ sub check_host_reachable {
 #     # FAILURE
 #   elsif <response> is "done" then
 #     <cancelled> = (<response> =~ /done\t(.*)/)
+# elsif <command> was "exists"
+#   read <response>
+#   if <response> is "failed" then
+#     # FAILURE
+#   else
+#     <size> = (<response> =~ /exists\t(.*)/)
+#     if <size> is "no" then
+#       # it doesn't exist
+#     else
+#       <size> is the size of the file
 
 
-#my $command = <>;
 my $command = $ARGV[0];
 
 my $s = new IO::Select(\*STDIN);
@@ -102,7 +111,7 @@ if ($command eq "upload") {
     respond("okay");
   }
 
-  my $fetcher = ModENCODE::Fetcher->new($uri->scheme, $command_id);
+  my $fetcher = ModENCODE::Fetcher->new($uri, $command_id);
   if (!$fetcher) {
     respond "failed", "Couldn't create fetcher for " . $uri->scheme;
   } else {
@@ -113,7 +122,7 @@ if ($command eq "upload") {
       $SIG{CHLD} = 'IGNORE';
       exit 0;
     } else {
-      $fetcher->start_getting_url($uri->as_string);
+      $fetcher->start_getting_url();
       if ($fetcher->failed) {
         respond "failed", $fetcher->failed;
         respond "log";
@@ -124,7 +133,7 @@ if ($command eq "upload") {
     }
   }
 } elsif ($command eq "check") {
-  my $fetcher = ModENCODE::Fetcher->connect($uri->scheme, $command_id);
+  my $fetcher = ModENCODE::Fetcher->connect($uri, $command_id);
   if (!$fetcher) {
     respond "failed", "Couldn't connect to existing fetcher";
   } else {
@@ -142,13 +151,17 @@ if ($command eq "upload") {
     }
   }
 } elsif ($command eq "cancel") {
-  my $fetcher = ModENCODE::Fetcher->connect($uri->scheme, $command_id);
+  my $fetcher = ModENCODE::Fetcher->connect($uri, $command_id);
   if (!$fetcher) {
     respond "failed", "Couldn't connect to existing fetcher";
   } else {
     respond "done", $fetcher->cancel();
   }
+} elsif ($command eq "exists") {
+  my $fetcher = ModENCODE::Fetcher->new($uri, $command_id);
+  respond "exists", $fetcher->exists();
 } else {
   print STDERR "Valid commands are: upload, check, cancel\n";
+  respond "failed", "bad command";
   exit;
 }
