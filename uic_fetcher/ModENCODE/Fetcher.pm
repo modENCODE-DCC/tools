@@ -4,6 +4,8 @@ use IPC::Open3;
 use IO::Select;
 use IO::Pipe;
 use IO::File;
+use File::Spec qw();
+use File::Basename qw();
 use POSIX qw(mkfifo);
 
 use ModENCODE::Fetcher::Wget;
@@ -12,9 +14,10 @@ use ModENCODE::Fetcher::Rsync;
 use strict;
 
 sub new {
-  my ($class, $uri, $command_id) = @_;
+  my ($class, $uri, $command_id, $destination_root) = @_;
   my $scheme = $uri->scheme;
   my $url = $uri->as_string;
+  $destination_root ||= ".";
   my $self = { 'log' => [], 'url' => $url };
   if ($scheme eq "http" || $scheme eq "https" || $scheme eq "ftp") {
     bless $self, 'ModENCODE::Fetcher::Wget';
@@ -24,7 +27,7 @@ sub new {
     return 0;
   }
 
-  $self->{'destination'} = File::Basename::basename($uri->path);
+  $self->{'destination'} = File::Spec->canonpath(File::Spec->catfile($destination_root, File::Basename::basename($uri->path)));
   $self->{'fifo_path_in'} = "/tmp/$command_id.in.fifo";
   $self->{'fifo_path_out'} = "/tmp/$command_id.out.fifo";
 
@@ -122,7 +125,7 @@ sub exists {
   if ($size >= 0) {
     return $size;
   } else {
-    return "no";
+    return -1;
   }
 }
 
@@ -130,7 +133,7 @@ sub DESTROY {
   my $self = shift;
   if ($self->{'ppid'}) {
     my $ppid = $self->{'ppid'};
-    waitpid($ppid, 0);
+    waitpid($ppid, 0) if $ppid;
     unlink($self->{'fifo_path_in'}) if (-e $self->{'fifo_path_in'});
     unlink($self->{'fifo_path_out'}) if (-e $self->{'fifo_path_out'});
   }
@@ -156,15 +159,11 @@ sub start_getting_url {
   my $uri = URI->new($url);
 
   if (-e $self->{'fifo_path_in'}) {
-#    print STDERR "FIFO already exists, using existing " . $self->{'fifo_path_in'} . "\n";
   } else {
-#    print STDERR "FIFO created: " . $self->{'fifo_path_in'} . "\n";
     mkfifo($self->{'fifo_path_in'}, 0700);
   }
   if (-e $self->{'fifo_path_out'}) {
-#    print STDERR "FIFO already exists, using existing " . $self->{'fifo_path_out'} . "\n";
   } else {
-#    print STDERR "FIFO created: " . $self->{'fifo_path_out'} . "\n";
     mkfifo($self->{'fifo_path_out'}, 0700);
   }
 

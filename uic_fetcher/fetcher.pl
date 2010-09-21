@@ -1,8 +1,15 @@
 #!/usr/bin/perl
 
+BEGIN {
+  my $root_dir = $0;
+  $root_dir =~ s/[^\/]*$//;
+  push @INC, $root_dir;
+}
 use URI;
 use Socket;
 use ModENCODE::Fetcher;
+use POSIX qw();
+use File::Path qw();
 use strict;
 
 sub respond {
@@ -91,16 +98,16 @@ sub check_host_reachable {
 my $command = $ARGV[0];
 
 my $s = new IO::Select(\*STDIN);
-my ($address, $command_id);
+my ($address, $command_id, $project_id);
 my ($ready) = $s->can_read(2);
 if ($ready) { $address = <$ready>; chomp($address); } else { die "Timed out waiting for URI"; }
-($ready) = $s->can_read(2);
-if ($ready) { $command_id = <$ready>; chomp($command_id); } else { die "Timed out waiting for command_id"; }
-
-print "Got address: $address\n";
-print "Got command_id: $command_id\n";
+$s->can_read(2);
+if ($ready) { $command_id = <$ready>; chomp($command_id); } else { die "Timed out waiting for URI"; }
+$s->can_read(2);
+if ($ready) { $project_id = <$ready>; chomp($project_id); } else { die "Timed out waiting for URI"; }
 
 my $uri = URI->new($address);
+my $destination_root = "/tmp/data/$project_id/extracted";
 
 if ($command eq "upload") {
   my $res = check_host_reachable($uri->host, $uri->port);
@@ -111,17 +118,18 @@ if ($command eq "upload") {
     respond("okay");
   }
 
-  my $fetcher = ModENCODE::Fetcher->new($uri, $command_id);
+  if (!-d $destination_root) { File::Path::mkpath($destination_root); }
+  my $fetcher = ModENCODE::Fetcher->new($uri, $command_id, $destination_root);
   if (!$fetcher) {
     respond "failed", "Couldn't create fetcher for " . $uri->scheme;
   } else {
     # Daemonize fetch
-    my $pid = fork();
-    if ($pid) {
+#    my $pid = fork();
+#    if ($pid) {
       # In parent; detach and exit
-      $SIG{CHLD} = 'IGNORE';
-      exit 0;
-    } else {
+#      $SIG{CHLD} = 'IGNORE';
+#      exit 0;
+#    } else {
       $fetcher->start_getting_url();
       if ($fetcher->failed) {
         respond "failed", $fetcher->failed;
@@ -130,10 +138,17 @@ if ($command eq "upload") {
       } else {
         respond "started", $fetcher->destination;
       }
-    }
+      sleep 1;
+      system("disown", $$);
+      POSIX::setsid();
+      open STDIN, "/dev/null" or die "Can't reopen STDIN";
+      open STDOUT, "/dev/null" or die "Can't reopen STDOUT";
+      open STDERR, '>&STDOUT' or die "Can't reopen STDERR";
+      exit;
+#    }
   }
 } elsif ($command eq "check") {
-  my $fetcher = ModENCODE::Fetcher->connect($uri, $command_id);
+  my $fetcher = ModENCODE::Fetcher->connect($uri, $command_id, $destination_root);
   if (!$fetcher) {
     respond "failed", "Couldn't connect to existing fetcher";
   } else {
@@ -151,17 +166,16 @@ if ($command eq "upload") {
     }
   }
 } elsif ($command eq "cancel") {
-  my $fetcher = ModENCODE::Fetcher->connect($uri, $command_id);
+  my $fetcher = ModENCODE::Fetcher->connect($uri, $command_id, $destination_root);
   if (!$fetcher) {
     respond "failed", "Couldn't connect to existing fetcher";
   } else {
     respond "done", $fetcher->cancel();
   }
 } elsif ($command eq "exists") {
-  my $fetcher = ModENCODE::Fetcher->new($uri, $command_id);
+  my $fetcher = ModENCODE::Fetcher->new($uri, $command_id, $destination_root);
   respond "exists", $fetcher->exists();
 } else {
-  print STDERR "Valid commands are: upload, check, cancel\n";
   respond "failed", "bad command";
   exit;
 }
