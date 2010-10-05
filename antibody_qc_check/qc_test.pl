@@ -33,14 +33,33 @@ ModENCODE::Config::set_cfg("$validator_dir/validator.ini");
 
 my $dbh = DBI->connect("dbi:Pg:dbname=modencode_chado;host=localhost", "db_public", "ir84#4nm");
 
-my @ids = ( 573 );
+my @ids;
+if ($ARGV[0] && $ARGV[0] ne "-") {
+  @ids = @ARGV;
+} elsif ($ARGV[0] && $ARGV[0] eq "-") {
+  while (<>) {
+    chomp;
+    push @ids, $_;
+  }
+}
+my %seen; @ids = grep { $_ eq (0 + $_) && !$seen{$_}++ } @ids; %seen = {};
+if (!scalar(@ids)) {
+  print STDERR "Usage:\n";
+  print STDERR "  From a file:\n    cat ids.txt | $0 -\n";
+  print STDERR "  On the command line:\n    $0 123 234 432\n";
+  exit;
+}
+print STDERR "Checking projects: " . join(", ", @ids) . "\n";
+
 
 foreach my $proj_id (@ids) {
+  print STDERR "Checking project $proj_id\n";
   my $schema = "modencode_experiment_${proj_id}_data";
   my $sth_antibodies = $dbh->prepare("SELECT d.value FROM $schema.data d
     INNER JOIN $schema.cvterm cvt ON d.type_id = cvt.cvterm_id
     WHERE cvt.name = 'antibody'");
-  $sth_antibodies->execute();
+  my $res = $sth_antibodies->execute();
+  next unless $res;
 
   my @ab_urls;
   while (my $ab_url = $sth_antibodies->fetchrow_array()) {
@@ -51,7 +70,12 @@ foreach my $proj_id (@ids) {
     }
   }
   $sth_antibodies->finish();
-  next unless scalar(@ab_urls);
+  unless (scalar(@ab_urls)) {
+    print STDERR "  No antibodies found.\n";
+    next;
+  } else {
+    print STDERR "  Checking " . scalar(@ab_urls) . " antibodies.\n";
+  }
 
   my $v = init_validator($dbh, $schema);
   print_tries_header($v->get_tries());
