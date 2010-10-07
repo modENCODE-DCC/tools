@@ -1,5 +1,5 @@
 require 'rubygems'
-require '/var/www/pipeline/submit/config/environment'
+require '/var/www/submit/config/environment'
 class Formatter
   def self.format(exps, collapse_long=true, extra_cols = {})
     cols = [

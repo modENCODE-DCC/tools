@@ -3,8 +3,9 @@
 require 'rubygems'
 require 'cgi'
 require 'dbi'
+require 'dbd/Pg'
 require 'pp'
-require '/var/www/pipeline/submit/lib/pg_database_patch'
+require '/var/www/submit/lib/pg_database_patch'
 require 'formatter'
 require 'chado_reporter'
 require 'geo'
@@ -19,7 +20,7 @@ end
 r = ChadoReporter.new
 r.set_schema("reporting")
 
-dbh = DBI.connect("dbi:Pg:dbname=pipeline_dev;host=heartbroken.lbl.gov;port=5432", "db_public", "ir84#4nm")
+dbh = DBI.connect("dbi:Pg:dbname=pipeline_dev;host=modencode-db1;port=5432", "db_public", "ir84#4nm")
 if (File.exists?('breakpoint6.dmp')) then
   exps = Marshal.load(File.read('breakpoint6.dmp'))
 else

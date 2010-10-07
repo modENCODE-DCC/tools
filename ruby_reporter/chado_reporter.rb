@@ -4,7 +4,7 @@ require 'pp'
 
 class ChadoReporter
   def initialize
-    @dbh = DBI.connect("dbi:Pg:dbname=modencode_chado;host=awol.lbl.gov;port=5433", "db_public", "ir84#4nm") unless @dbh
+    @dbh = DBI.connect("dbi:Pg:dbname=modencode_chado;host=modencode-db1;port=5432", "db_public", "ir84#4nm") unless @dbh
   end
   def dbh
     @dbh
