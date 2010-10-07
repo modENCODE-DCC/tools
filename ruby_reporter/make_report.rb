@@ -605,7 +605,7 @@ else
               e["experiment_types"].push "RTPCR"
             end
           else
-            e["experiment_types"].push "RACE sample creation"
+            e["experiment_types"].push "sample creation"
             e["types"] = [ "N/A (metadata only)" ]
           end
       end
@@ -627,9 +627,9 @@ else
         protocol_types.find { |pt| pt =~ /immunoprecipitation/ }.nil?
         then
         if e["compound"] && e["compound"].find { |compound| compound =~ /sodium chloride/ } then
-          e["experiment_types"].push "Chromatin-chip"
+          e["experiment_types"].push "tiling array: DNA"
         else
-          e["experiment_types"].push "RNA tiling array"
+          e["experiment_types"].push "tiling array: RNA"
         end
       end
 
@@ -646,6 +646,7 @@ else
           e["stage"] = [ "N/A" ]
           e["cell_line"] = [ "N/A" ]
           e["antibody_names"] = [ "N/A" ]
+          e["antibody_targets"] = [ "N/A" ]
         end
       end
 
@@ -659,8 +660,9 @@ else
           )
       then
         e["types"] = [ "N/A (metadata only)" ]
-        e["experiment_types"].push "RNA sample creation"
+        e["experiment_types"].push "sample creation"
         e["antibody_names"] = [ "N/A" ]
+        e["antibody_targets"] = [ "N/A" ]
       end
       e["experiment_types"].uniq!
 
@@ -698,34 +700,40 @@ else
 
     # Search through all of the antibody data to try to find antibody names
     exps.each { |e|
+      #antibodies need to have both a target and a name.  this will help distinguish different
+      #experiments to the same target.  for example, antibodies to the same protien, but
+      #one each for the N- or C-terminus
       e["antibody_names"] = Array.new if e["antibody_names"].nil?
+      e["antibody_targets"] = Array.new if e["antibody_targets"].nil?
+
       e["antibodies"].each { |a|
-        # Any attributes of this datum with a heading of "target name"? If so, we'll
-        # use that rather than the antibody name, since the target is really the 
-        # information of interest
-        name = a["attributes"].find { |attr| attr["heading"] == "target name" }
-        # If there's an empty target or it contains "Not Applicable", look elsewhere.
-        # Otherwise, get the value of the attribute.
-        name = (name.nil? || name["value"] == "Not Applicable") ? nil : name["value"]
+        # since we are capturing both a target and antibody name, we'll assign both
+        #there should always be a worm or fly gene id for an antibody, that should be the "target"
+        target = a["attributes"].find { |attr| attr["heading"] == "target id" }
+        target = target["value"] unless target.nil?
+
+        #if the target gene id can't be found, then use the target name
+        target = a["attributes"].find { |attr| attr["heading"] == "target name" } 
+        target = (target.nil? || target["value"] == "Not Applicable") ? nil : target["value"]
         # If not a target name on an antibody, what about a target ID attached to a
-        # specimen in this project?
+        # specimen in this project?  this might be the case for GFP or FLAG
         e["specimens"].each { |sp| 
           target_id = sp["attributes"].find { |attr| attr["heading"] == "target id" }
           if target_id then
-            name = target_id["value"]
+            target = target_id["value"]
             break
           end
         }
-        # If we didn't find a target name, look for an attribute (from the wiki
-        # page) with a heading of "official name"; this is just the name of
-        # the antibody
-        if name.nil? then
-          name = a["attributes"].find { |attr| attr["heading"] == "official name" }
-          name = name["value"] unless name.nil?
-        end
+        name = a["attributes"].find { |attr| attr["heading"] == "official name" }
+        name = name["value"] unless name.nil?
+        
+        #TODO: change the target for histone marks to be more like H3K4Me3.
 
         e["antibody_names"].push name
+        e["antibody_targets"].push target
       }
+      e["antibody_names"].uniq!
+      e["antibody_targets"].uniq!
     }
 
     # Throw out any deprecated or unreleased projects; look up the status in the pipeline
@@ -758,7 +766,7 @@ else
 
     puts "#{exps.size} total projects"
     #exps.delete_if { |e| (e["status"] != "released" && e["status"] != "approved by user") || e["deprecated"] }
-    puts "#{exps.size} released projects"
+    #puts "#{exps.size} released projects"
     File.open('breakpoint5.dmp', 'w') { |f| Marshal.dump(exps, f) }
   end
 
@@ -799,6 +807,7 @@ sth.fetch_all.each { |row|
     "cell_line" => [],
     "stage" => [],
     "antibody_names" => [],
+    "antibody_targets" => [],
     "compound" => [],
     "array_platform" => [],
     "growth_condition" => [],

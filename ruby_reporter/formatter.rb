@@ -14,7 +14,8 @@ class Formatter
         "Strain",
         "Cell Line",
         "Stage/Treatment",
-        "Antibody",
+        "Antibody Name",
+        "Target",
         "Compound",
         "Platform",
         "RNAi Target",
@@ -54,6 +55,8 @@ class Formatter
         cols.push e["stage"].sort.join(", ")
       end
       cols.push e["antibody_names"].join(", ")
+      #puts "id: #{id}\n#{e.pretty_inspect}"
+      cols.push e["antibody_targets"].join(", ")
       cols.push e["compound"].join(", ")
       cols.push e["array_platform"].join(", ")
       cols.push e["rnai_targets"].join(", ")
@@ -197,7 +200,7 @@ class Formatter
             cols[idx] = cols[idx].to_s.gsub(/N\/A/, "") unless (idx.nil? || cols[idx].nil?)
             if k == "Experimental Factor" then
               factors = Array.new
-              antibody = cols[col_index["Antibody"]].gsub(/N\/A/, "").gsub(/No Antibody Control/, "control")
+              antibody = cols[col_index["Antibody Name"]].gsub(/N\/A/, "").gsub(/No Antibody Control/, "control")
               factors.push "AbName=#{antibody}" if antibody.length > 0
               factors.push "RNAiTarget=#{cols[col_index["RNAi Target"]]}" if cols[col_index["RNAi Target"]].length > 0
               factors.push "SaltConcentration=#{cols[col_index["Compound"]].gsub(/sodium chloride/, "")}" if cols[col_index["Compound"]] =~ /sodium chloride/
@@ -312,13 +315,33 @@ class Formatter
             cols[idx] = cols[idx].to_s.gsub(/^\s*|\s*$/, "") unless (idx.nil? || cols[idx].nil?)
             if k == "Experimental Factor" then
               factors = Array.new
-              antibody = cols[col_index["Antibody"]].gsub(/N\/A/, "").gsub(/No Antibody Control/, "control")
+              antibody = cols[col_index["Antibody Name"]].gsub(/N\/A/, "").gsub(/No Antibody Control/, "control")
+              antibody = antibody.split(",")
+              antibody.delete("control") if antibody.length > 1
+              antibody = antibody.join(", ")
+              target = cols[col_index["Target"]]
               factors.push "AbName=#{antibody}" if antibody.length > 0
+              factors.push "Target=#{target}" if target.length > 0
               factors.push "RNAiTarget=#{cols[col_index["RNAi Target"]]}" if cols[col_index["RNAi Target"]].length > 0
               factors.push "SaltConcentration=#{cols[col_index["Compound"]].gsub(/sodium chloride/, "")}" if cols[col_index["Compound"]] =~ /sodium chloride/
               factors.push "EnvironmentalTreatment=#{cols[col_index["Growth Condition"]]}" if cols[col_index["Growth Condition"]].length > 0
               factors.push "DNAseTreatment=#{cols[col_index["DNAse Treatment"]]}" if cols[col_index["DNAse Treatment"]].length > 0
               line.push factors.map { |s| s.gsub(/, /, ",") }.join(";")
+            elsif k == "Cell Line" then
+              #blank out the contents of stage, tissue, strain if cell line is present
+              #TODO: add in logic to determine if its a copy number variation experiment, in which case leave them
+               if !cols[idx].empty? then
+                 cols[col_index["Stage/Treatment"]] = ""
+                 cols[col_index["Tissue"]] = ""
+                 cols[col_index["Strain"]] = ""
+               end
+               cell_lines = cols[idx]
+               cell_lines = cell_lines.split(/, /)
+               if cell_lines.length > 1 then
+                 line.push "mixed: " + cell_lines.join(", ")
+               else
+                 line.push cell_lines.join(", ")
+               end
             elsif k == "Stage/Treatment" then
               stage = cols[idx]
               stage = stage.split(/, /).reject { |s| s =~ /Embryo \d+-\d+ h/ }.join(", ")
@@ -354,36 +377,53 @@ class Formatter
                 blocks.push(min == max ? "embryonic stage #{min}" : "embryonic stage #{min}-#{max}") if min > 0
                 stage = blocks.join(", ")
               end
+              if ((stage =~ /embryo|cleavage|blastoderm|gastrula|germ band|egg/) && (stage =~ /larva|(L\d+)|prepupa|dauer|pupa|P[3-9]|adult/)) then
+                stage = "mixed: " + stage
+              elsif stage =~ /embryo|cleavage|blastoderm|gastrula|germ band|egg/ then
+                stage = "embryo: " + stage
+              elsif stage =~ /larva(l)?|L\d stage|prepupa|dauer|molt/ then
+                stage = "larva: " + stage
+              elsif stage =~ /pupa|P([3-9]|1[1-4])|pharate adult/ then 
+                stage = "pupae: " + stage
+              elsif stage =~ /adult/ then
+                stage = "adult: " + stage
+              end
+
               line.push stage
             elsif k == "Status" then
               status_num = Project::Status::status_number(cols[idx])
+              #TODO: add in displayed - gbrowse, and released should be availability in modmine
               if !status_num.nil? then
                 status = case status_num
-                         when 0
+                         when 0 # usually means queued
                            "reviewing"
-                         when 1
+                         when 1 #new
                            "uploaded"
-                         when 2
+                         when 2 #uploaded
                            "uploaded"
-                         when 3
+                         when 3 #expanded
+                           "uploaded"
+                         when 4 #validated
                            "reviewing"
-                         when 4
+                         when 5 #loaded
                            "reviewing"
-                         when 5
+                         when 6 #tracks found
                            "reviewing"
-                         when 6
-                           "preview available"
-                         when 7
+                         when 7 #tracks approved
                            "approved"
-                         when 8
+                         when 8 #released
                            "released"
-                         when 9
+                         when 9 #???
                            "released"
                          end
+                #TODO: add in an item for retracted
               else
                 status = cols[idx]
+                if status =~ /deprecated|superseded/ then
+                  status = "replaced"
+                end
               end
-              status = cols[idx]
+              #status = cols[idx]
               line.push status
             elsif idx.nil? then
               puts "No column for #{k}"
