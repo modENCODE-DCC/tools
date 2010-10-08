@@ -16,6 +16,26 @@ module Enumerable
   end
 end
 
+def is_histone_antibody(antibody)
+  if antibody =~ /(?:^|[Hh]istone )H\d+(([A-Z]\d.*|[Tt]etra)([Mm][Ee]|[Aa][Cc]|[Bb]ubi))?/
+    puts "Modification site change because antibody is #{antibody}"
+    if antibody =~ /[tT]rimethylated Lys-(\d+) o[fn] histone (H\d+)/ then
+      m = antibody.match(/[tT]rimethylated Lys-(\d+) o[fn] histone (H\d+)/)
+      antibody = "#{m[2]}K#{m[1]}Me3"
+    else
+      antibody = "" + antibody # Clone
+    end
+    antibody = antibody.match(/(?:^|[Hh]istone )(H\d+(([A-Z]\d+|[Tt]etra|[Bb])?([Mm][Ee]|[Aa][Cc]|[Uu]bi)(\d+)?)?)([Tt]etra)?/)[1]
+    antibody.sub!(/[Aa][Cc](\d)?/, 'Ac\1')
+    antibody.sub!(/[Mm][Ee](\d)?/, 'Me\1')
+    antibody.sub!(/[Bb]ubi/, 'BUbi')
+    antibody.sub!(/tetra/, 'Tetra')
+    puts "  Cleaned antibody to #{antibody}"
+    return antibody
+  end
+  return false
+end
+
 
 r = ChadoReporter.new
 r.set_schema("reporting")
@@ -588,6 +608,18 @@ else
         end
       end
 
+      if 
+        protocol_types.find { |pt| pt =~ /^extraction$/ } &&  # DNA-seq, probably
+        protocol_types.find { |pt| pt =~ /sequencing(_protocol)?/ } && 
+        protocol_types.find { |pt| pt =~ /chromatin_immunoprecipitation/ }.nil?
+        then
+        if protocol_types.find { |pt| pt =~ /reverse_transcription/ } then
+          e["experiment_types"].push "RTPCR"
+        else
+          e["experiment_types"].push "DNA-seq"
+        end
+      end
+
       if e["rnai_targets"].size > 0 then
         e["experiment_types"].push "RNAi"
       end
@@ -687,7 +719,6 @@ else
       # "binding sites"
       e["types"].delete("binding sites") if e["types"].include?("chromatin binding sites")
       e["types"].delete("binding sites") if e["types"].include?("chromatin binding site signal data")
-
       if e["types"].size == 0 && (
         (!e["GSE"].nil? && e["GSE"].length > 0) ||
         e["GSM"].size > 0 ||
@@ -727,11 +758,26 @@ else
         name = a["attributes"].find { |attr| attr["heading"] == "official name" }
         name = name["value"] unless name.nil?
         
-        #TODO: change the target for histone marks to be more like H3K4Me3.
-
-        e["antibody_names"].push name
-        e["antibody_targets"].push target
+        target.sub!(/(fly|worm)_genes:/, '') unless target.nil?
+        e["antibody_names"].push name # unless name.nil? || name.empty?
+        e["antibody_targets"].push target # unless target.nil? || target.empty?
       }
+
+      if (e["types"].delete("chromatin binding sites") || e["types"].delete("chromatin binding site signal data")) then
+        new_type = "chromatin"
+        if !e["antibody_targets"].empty?
+          e["antibody_targets"].each_index do |i|
+            abt = e["antibody_targets"][i]
+            if (new_name = is_histone_antibody(abt)) then
+              e["antibody_targets"][i] = new_name
+              e["antibody_names"][i] = new_name
+              new_type = "chromatin modification"
+            end
+          end
+        end
+        e["types"].push(new_type)
+      end
+
       e["antibody_names"].uniq!
       e["antibody_targets"].uniq!
     }
