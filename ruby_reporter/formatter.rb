@@ -54,7 +54,7 @@ class Formatter
       else
         cols.push e["stage"].sort.join(", ")
       end
-      cols.push e["antibody_names"].join(", ")
+      cols.push e["antibody_names"].compact.join(", ")
       #puts "id: #{id}\n#{e.pretty_inspect}"
       cols.push e["antibody_targets"].join(", ")
       cols.push e["compound"].join(", ")
@@ -200,7 +200,7 @@ class Formatter
             cols[idx] = cols[idx].to_s.gsub(/N\/A/, "") unless (idx.nil? || cols[idx].nil?)
             if k == "Experimental Factor" then
               factors = Array.new
-              antibody = cols[col_index["Antibody Name"]].gsub(/N\/A/, "").gsub(/No Antibody Control/, "control")
+              antibody = cols[col_index["Antibody Name"]].gsub(/N\/A|^na$/i, "").gsub(/No Antibody Control/, "control")
               factors.push "AbName=#{antibody}" if antibody.length > 0
               factors.push "RNAiTarget=#{cols[col_index["RNAi Target"]]}" if cols[col_index["RNAi Target"]].length > 0
               factors.push "SaltConcentration=#{cols[col_index["Compound"]].gsub(/sodium chloride/, "")}" if cols[col_index["Compound"]] =~ /sodium chloride/
