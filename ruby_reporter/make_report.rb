@@ -713,7 +713,13 @@ else
       # pairwise_sequence_alignment = Alignment
       if e["experiment_types"].size == 0 && protocol_types.find { |pt| pt =~ /pairwise_sequence_alignment/ } then
         if protocol_types.find { |pt| pt =~ /PCR(_amplification)?/ } then
-          e["experiment_types"].push "cDNA sequencing"
+          if e["protocol_types"].find { |row| row["name"] =~ /CAGE/ } then
+            # Only way to detect CAGE is by protocol name, since really it's the same kind of experiment
+            e["experiment_types"].push "CAGE"
+            e["types"] = [ "RNA profiling" ]
+          else 
+            e["experiment_types"].push "cDNA sequencing"
+          end
         else
           e["experiment_types"].push "Alignment"
         end
