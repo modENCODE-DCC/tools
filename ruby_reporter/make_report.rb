@@ -712,7 +712,11 @@ else
 
       # pairwise_sequence_alignment = Alignment
       if e["experiment_types"].size == 0 && protocol_types.find { |pt| pt =~ /pairwise_sequence_alignment/ } then
-        e["experiment_types"].push "Alignment"
+        if protocol_types.find { |pt| pt =~ /PCR(_amplification)?/ } then
+          e["experiment_types"].push "cDNA sequencing"
+        else
+          e["experiment_types"].push "Alignment"
+        end
       end
 
       # If we have specific types of binding sites, then get rid of the generic
