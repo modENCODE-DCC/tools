@@ -772,6 +772,41 @@ else
         e["antibody_names"].push name # unless name.nil? || name.empty?
         e["antibody_targets"].push target # unless target.nil? || target.empty?
       }
+      if e["types"].include?("splice sites") ||
+        e["types"].include?("transcription/coding junctions") ||
+        e["types"].include?("alignments") ||
+        e["types"].include?("trace reads") ||
+        e["types"].include?("gene models") ||
+        e["types"].include?("binding sites") ||
+        e["types"].include?("origins of replication") ||
+        e["types"].include?("copy number variation") ||
+        e["types"].include?("EST alignments") ||
+        e["types"].include?("polyA_site") ||
+        e["types"].include?("cDNA alignments") then
+
+        e["types"].delete("splice sites")
+        e["types"].delete("transcription/coding junctions")
+        e["types"].delete("alignments")
+        e["types"].delete("trace reads")
+        e["types"].delete("gene models")
+        e["types"].delete("binding sites")
+        e["types"].delete("origins of replication")
+        e["types"].delete("copy number variation")
+        e["types"].delete("EST alignments")
+        e["types"].delete("EST alignments")
+        e["types"].delete("cDNA alignments")
+
+        if e["types"].include?("signal data") && !e["experiment_types"].include?("Computational annotation") then
+          e["types"] = [ "transcription" ]
+          e["experiment_types"].push("tiling array: RNA") if e["experiment_types"].delete("ChIP-chip")
+        else
+          e["types"] = [ "gene models" ]
+        end
+      elsif e["types"].include?("transcript fragments") then
+        e["types"].delete("transcript fragments")
+        e["types"] = [ "transcription" ]
+        e["experiment_types"].push("tiling array: RNA") if e["experiment_types"].delete("ChIP-chip")
+      end
 
       if (e["types"].delete("chromatin binding sites") || e["types"].delete("chromatin binding site signal data")) then
         new_type = "chromatin"
