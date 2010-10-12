@@ -25,7 +25,7 @@ def is_histone_antibody(antibody)
     else
       antibody = "" + antibody # Clone
     end
-    antibody = antibody.match(/(?:^|[Hh]istone )(H\d+(([A-Z]\d+|[Tt]etra|[Bb])?([Mm][Ee]|[Aa][Cc]|[Uu]bi)(\d+)?)?)([Tt]etra)?/)[1]
+    antibody = antibody.match(/(?:^|[Hh]istone )(H\d+(([A-Z]\d+|[Tt]etra|[Bb])?([Mm][Ee]|[Aa][Cc]|[Uu]bi)(\d*))?([Tt]etra)?\d*)/)[1]
     antibody.sub!(/[Aa][Cc](\d)?/, 'Ac\1')
     antibody.sub!(/[Mm][Ee](\d)?/, 'Me\1')
     antibody.sub!(/[Bb]ubi/, 'BUbi')
@@ -632,7 +632,7 @@ else
         then
           if e["types"].size > 0 then
             if e["protocol_types"].find { |row| row["description"] =~ /RACE/ } then
-              e["experiment_types"].push "RACE"
+              e["experiment_types"] = [ "RACE" ]
             else
               e["experiment_types"].push "RTPCR"
             end
@@ -667,7 +667,7 @@ else
 
       # annotation = Computational annotation
       if 
-        protocol_types.find { |pt| pt =~ /annotation/i }
+        protocol_types.find { |pt| pt =~ /annotation/i } && !e["experiment_types"].include?("RACE")
         then
         e["experiment_types"].push "Computational annotation"
         # Also get rid of any reagents, since this really just analyzing old data
@@ -718,10 +718,26 @@ else
             e["experiment_types"].push "CAGE"
             e["types"] = [ "RNA profiling" ]
           else 
-            e["experiment_types"].push "cDNA sequencing"
+            if e["protocol_types"].find { |row| row["name"] =~ /RNA/ } then
+              # These are some poorly characterized Gingeras submissions where the first
+              # protocol includes purification, (unlisted) extraction, PCR, and labeling.
+              e["experiment_types"].push "RNA-seq"
+            else
+              e["experiment_types"].push "cDNA sequencing"
+            end
           end
         else
           e["experiment_types"].push "Alignment"
+        end
+      end
+
+      if e["experiment_types"].include?("ChIP-chip") || e["experiment_types"].include?("ChIP-seq") then
+        if e["uniquename"] =~ /replication timing/i then
+          e["types"] = [ "replication timing" ]
+        elsif e["uniquename"] =~ /origin/i then
+          e["types"] = [ "origins of replication" ]
+        elsif e["uniquename"] =~ /(orc|mcm)[^a-z]/i then
+          e["types"] = [ "replication factors" ]
         end
       end
 
@@ -778,7 +794,6 @@ else
         e["types"].include?("trace reads") ||
         e["types"].include?("gene models") ||
         e["types"].include?("binding sites") ||
-        e["types"].include?("origins of replication") ||
         e["types"].include?("copy number variation") ||
         e["types"].include?("EST alignments") ||
         e["types"].include?("polyA_site") ||
@@ -790,7 +805,6 @@ else
         e["types"].delete("trace reads")
         e["types"].delete("gene models")
         e["types"].delete("binding sites")
-        e["types"].delete("origins of replication")
         e["types"].delete("copy number variation")
         e["types"].delete("EST alignments")
         e["types"].delete("EST alignments")
@@ -800,28 +814,35 @@ else
           e["types"] = [ "transcription" ]
           e["experiment_types"].push("tiling array: RNA") if e["experiment_types"].delete("ChIP-chip")
         else
-          e["types"] = [ "gene models" ]
+          e["types"].push("gene models")
         end
       elsif e["types"].include?("transcript fragments") then
         e["types"].delete("transcript fragments")
         e["types"] = [ "transcription" ]
         e["experiment_types"].push("tiling array: RNA") if e["experiment_types"].delete("ChIP-chip")
       end
+      
+      e["types"] = [ "RNA profiling" ] if e["experiment_types"].include?("RNA-seq")
 
       if (e["types"].delete("chromatin binding sites") || e["types"].delete("chromatin binding site signal data")) then
         new_type = "chromatin"
         if !e["antibody_targets"].empty?
           e["antibody_targets"].each_index do |i|
             abt = e["antibody_targets"][i]
-            if (new_name = is_histone_antibody(abt)) then
+            abn = e["antibody_names"][i]
+            if (new_name = is_histone_antibody(abt) || new_name = is_histone_antibody(abn)) then
               e["antibody_targets"][i] = new_name
               e["antibody_names"][i] = new_name
               new_type = "chromatin modification"
             end
           end
+        else
+          new_type = "chromatin modification"
         end
         e["types"].push(new_type)
       end
+
+      e["types"] = [ "chromatin" ] if e["types"].include?("signal data") && e["experiment_types"].include?("tiling array: DNA")
 
       e["antibody_names"].uniq!
       e["antibody_targets"].uniq!
