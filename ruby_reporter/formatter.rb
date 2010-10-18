@@ -320,8 +320,8 @@ class Formatter
               antibody.delete("control") if antibody.length > 1
               antibody = antibody.join(", ")
               target = cols[col_index["Target"]]
-              factors.push "AbName=#{antibody}" if antibody.length > 0
               factors.push "Target=#{target}" if target.length > 0
+              factors.push "AbName=#{antibody}" if antibody.length > 0
               factors.push "RNAiTarget=#{cols[col_index["RNAi Target"]]}" if cols[col_index["RNAi Target"]].length > 0
               factors.push "SaltConcentration=#{cols[col_index["Compound"]].gsub(/sodium chloride/, "")}" if cols[col_index["Compound"]] =~ /sodium chloride/
               factors.push "EnvironmentalTreatment=#{cols[col_index["Growth Condition"]]}" if cols[col_index["Growth Condition"]].length > 0
