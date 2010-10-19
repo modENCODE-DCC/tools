@@ -873,8 +873,22 @@ else
 
       e["types"] = [ "chromatin" ] if e["types"].include?("signal data") && e["experiment_types"].include?("tiling array: DNA")
 
-      e["antibody_names"].uniq!
-      e["antibody_targets"].uniq!
+      e["antibody_names"].uniq!; e["antibody_names"].compact!
+      e["antibody_targets"].uniq!; e["antibody_targets"].compact!
+
+      e["antibody_names"].delete_if { |abname| abname =~ /control/i }
+      e["antibody_names"] = e["antibody_names"].map { |abname| ( matches = abname.match(/Ab:([^:]+):/) ).nil? ? abname : matches[1] } # Wiki URL
+      e["antibody_names"] = e["antibody_names"].map { |abname| ( matches = abname.match(/elegans\s+(\S+)\s/) ).nil? ? abname : matches[1] } # e.g. "C. elegans DPY-27 1-409 rabbit polyclonal antibody"
+      e["antibody_names"] = e["antibody_names"].map { |abname| abname.gsub(/&reg;/, '') } # Who needs registered trademark symbols?
+      e["antibody_names"] = e["antibody_names"].map { |abname| abname.gsub(/anti-?/i, '') } # Yes, thanks, it's an antibody
+      if e["lab"] == "White" then
+        e["antibody_names"] = e["antibody_names"].map { |abname| abname.gsub(/PolII/, 'Covance_8WG16:14861301') } # This has been fixed on the antibody page for future submissions
+      elsif e["lab"] == "Snyder" then
+        e["antibody_names"] = e["antibody_names"].map { |abname| abname.gsub(/PolII/, 'Covance_8WG16:MMS-126R') } # This has been fixed on the antibody page for future submissions
+      end
+      e["antibody_targets"] = e["antibody_targets"].map { |abtarget| abtarget.gsub(/Enhanced Green Fluorescent Protein/, 'eGFP') }
+      e["antibody_targets"] = e["antibody_targets"].map { |abtarget| (abtarget =~ /^n(\/?)a$/i) ? "none" : abtarget }
+      e["antibody_targets"] = [] if ( e["antibody_targets"] == [ "none" ] && e["types"].include?("N/A (metadata only)") )
     }
 
     # Throw out any deprecated or unreleased projects; look up the status in the pipeline
