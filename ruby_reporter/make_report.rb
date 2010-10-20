@@ -937,6 +937,19 @@ else
 
 end
 
+puts "Getting microarray size."
+require 'pp'
+exps.each { |e|
+  e["array_size"] = e["arrays"].map { |arr|
+    arr["attributes"]
+  }.map { |array_attrs|
+    resolution = array_attrs.find { |a| a["heading"] == "resolution" }
+    resolution.nil? ? "" : resolution["value"].sub(/ bp/, 'bp')
+  }.uniq
+}
+puts "Done."
+
+
 # Get any projects that aren't in Chado yet
 chado_ids = exps.map { |e| e["xschema"].match(/_(\d+)_/)[1].to_i }
 
@@ -967,6 +980,7 @@ sth.fetch_all.each { |row|
     "array_platform" => [],
     "growth_condition" => [],
     "dnase_treatment" => [],
+    "array_size" => [],
     "rna_ids" => [],
     "rnai_targets" => []
   }
