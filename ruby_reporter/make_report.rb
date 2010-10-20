@@ -933,21 +933,30 @@ else
   }
   puts ""
   puts "Done."
+
+  # Get microarray information
+  puts "Getting microarray size."
+  require 'pp'
+  exps.each { |e|
+    e["array_size"] = e["arrays"].map { |arr|
+      arr["attributes"]
+    }.map { |array_attrs|
+      resolution = array_attrs.find { |a| a["heading"] == "resolution" }
+      resolution.nil? ? "" : resolution["value"].sub(/ bp/, 'bp')
+    }.uniq
+    e["array_platform"] = e["arrays"].map { |arr|
+      arr["attributes"]
+    }.map { |array_attrs|
+      platform = array_attrs.find { |a| a["heading"] == "platform" }
+      platform.nil? ? "" : platform["value"]
+    }.uniq
+  }
+  puts "Done."
+
   File.open('breakpoint6.dmp', 'w') { |f| Marshal.dump(exps, f) }
 
 end
 
-puts "Getting microarray size."
-require 'pp'
-exps.each { |e|
-  e["array_size"] = e["arrays"].map { |arr|
-    arr["attributes"]
-  }.map { |array_attrs|
-    resolution = array_attrs.find { |a| a["heading"] == "resolution" }
-    resolution.nil? ? "" : resolution["value"].sub(/ bp/, 'bp')
-  }.uniq
-}
-puts "Done."
 
 
 # Get any projects that aren't in Chado yet
@@ -981,6 +990,7 @@ sth.fetch_all.each { |row|
     "growth_condition" => [],
     "dnase_treatment" => [],
     "array_size" => [],
+    "array_platform" => [],
     "rna_ids" => [],
     "rnai_targets" => []
   }
