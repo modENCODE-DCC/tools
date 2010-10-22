@@ -730,8 +730,12 @@ else
               # These are some poorly characterized Gingeras submissions where the first
               # protocol includes purification, (unlisted) extraction, PCR, and labeling.
               e["experiment_types"].push "RNA-seq"
+            elsif e["xschema"] =~ /_712_/ then
+              # This experiment looks almost exactly like cDNA sequencing, but is apparently RNA-seq
+              e["experiment_types"].push "RNA-seq"
             else
               e["experiment_types"].push "cDNA sequencing"
+              e["types"] = [ "gene model" ]
             end
           end
         else
@@ -987,52 +991,68 @@ else
   }
   puts "Done."
 
+  # Get any projects that aren't in Chado yet
+  chado_ids = exps.map { |e| e["xschema"].match(/_(\d+)_/)[1].to_i }
+
+  sth = dbh.prepare("SELECT id, name, status, pi, lab, created_at, deprecated_project_id, superseded_project_id FROM projects")
+  sth.execute()
+  sth.fetch_all.each { |row|
+    next if chado_ids.include?(row["id"].to_i)
+    new_exp = {
+      "xschema" => "modencode_experiment_#{row["id"]}_data",
+      "uniquename" => row["name"],
+      "status" => row["status"],
+      "project" => row["pi"].split(/,/)[0],
+      "lab" => row["lab"].split(/,/)[0],
+      "created_at" => Date.parse(row["created_at"].to_s).to_s,
+      "deprecated" => (row["deprecated_project_id"] != "" && !row["deprecated_project_id"].nil?) ? row["deprecated_project_id"] : false,
+      "superseded" => (row["superseded_project_id"] != "" && !row["superseded_project_id"].nil?) ? row["superseded_project_id"] : false,
+      "released_at" => "",
+      "organisms" => [],
+      "types" => [],
+      "experiment_types" => [],
+      "tissue" => [],
+      "strain" => [],
+      "cell_line" => [],
+      "stage" => [],
+      "antibody_names" => [],
+      "antibody_targets" => [],
+      "compound" => [],
+      "array_platform" => [],
+      "growth_condition" => [],
+      "dnase_treatment" => [],
+      "array_size" => [],
+      "array_platform" => [],
+      "rna_ids" => [],
+      "rnai_targets" => []
+    }
+    exps.push(new_exp)
+  }
+  sth.finish
+  dbh.disconnect
+
+  puts "Trying to figure out project versions"
+  exps.each { |e|
+    version = 1
+    project_id = e["xschema"].match(/_(\d+)_/)[1].to_i
+    loop do
+      deprecates = exps.find { |e2| e2["deprecated"] == project_id || e2["superseded"] == project_id }
+      break unless deprecates
+      project_id = deprecates["xschema"].match(/_(\d+)_/)[1].to_i
+      version += 1
+    end
+    if version != 1 then
+    end
+    e["version"] = version unless version == 1
+  }
+  puts "Done."
+
+
   File.open('breakpoint6.dmp', 'w') { |f| Marshal.dump(exps, f) }
 
 end
 
 
-
-
-# Get any projects that aren't in Chado yet
-chado_ids = exps.map { |e| e["xschema"].match(/_(\d+)_/)[1].to_i }
-
-sth = dbh.prepare("SELECT id, name, status, pi, lab, created_at, deprecated_project_id, superseded_project_id FROM projects")
-sth.execute()
-sth.fetch_all.each { |row|
-  next if chado_ids.include?(row["id"].to_i)
-  new_exp = {
-    "xschema" => "modencode_experiment_#{row["id"]}_data",
-    "uniquename" => row["name"],
-    "status" => row["status"],
-    "project" => row["pi"].split(/,/)[0],
-    "lab" => row["lab"].split(/,/)[0],
-    "created_at" => Date.parse(row["created_at"].to_s).to_s,
-    "deprecated" => (row["deprecated_project_id"] != "" && !row["deprecated_project_id"].nil?) ? row["deprecated_project_id"] : false,
-    "superseded" => (row["superseded_project_id"] != "" && !row["superseded_project_id"].nil?) ? row["superseded_project_id"] : false,
-    "released_at" => "",
-    "organisms" => [],
-    "types" => [],
-    "experiment_types" => [],
-    "tissue" => [],
-    "strain" => [],
-    "cell_line" => [],
-    "stage" => [],
-    "antibody_names" => [],
-    "antibody_targets" => [],
-    "compound" => [],
-    "array_platform" => [],
-    "growth_condition" => [],
-    "dnase_treatment" => [],
-    "array_size" => [],
-    "array_platform" => [],
-    "rna_ids" => [],
-    "rnai_targets" => []
-  }
-  exps.push(new_exp)
-}
-sth.finish
-dbh.disconnect
 
 # Sort the projects by ID
 exps.sort! { |e1, e2| e1["xschema"].match(/_(\d+)_/)[1].to_i <=> e2["xschema"].match(/_(\d+)_/)[1].to_i }
