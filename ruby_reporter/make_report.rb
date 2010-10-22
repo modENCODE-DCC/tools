@@ -9,6 +9,7 @@ require '/var/www/submit/lib/pg_database_patch'
 require 'formatter'
 require 'chado_reporter'
 require 'geo'
+require 'escape'
 
 module Enumerable
   def uniq_by
@@ -953,9 +954,43 @@ else
   }
   puts "Done."
 
+  puts "Collecting SAM files for experiments."
+  exps.each { |e|
+    e["sam"] = r.collect_sam(e["xschema"]).join(", ")
+    print "."; $stdout.flush
+  }
+  puts ""
+  puts "Done."
+
+  # Get feature counts for CAGE or cDNA sequencing experiments
+  puts "Getting sequence counts"
+  exps.each { |e|
+    if e["experiment_types"].include?("CAGE") then
+      # Line count of SAM file
+      e["sequence_count"] = 0
+      e["sam"].each { |sam_file|
+        puts "Found SAM #{sam_file} for #{e["xschema"]}"
+        project_id = e["xschema"].match(/_(\d+)_/)[1].to_i
+        sam_file_path = File.join("/modencode/raw/data/", project_id.to_s, "extracted", sam_file)
+        cmd = "cat #{Escape::shell_command(sam_file_path)} | grep -v '^@' | wc -l"
+        cmd = "z" + cmd if sam_file_path =~ /\.gz$/
+        e["sequence_count"] += `#{cmd}`.chomp.to_i
+        puts "Got #{e["sequence_count"]} sequences for #{e["xschema"]}"
+      }
+    end
+    if e["experiment_types"].include?("cDNA sequencing") then
+      # Number of cDNA features
+      sequences = r.get_number_of_features_of_type(e["xschema"], "cDNA")
+      e["sequence_count"] = sequences if sequences && sequences != 0
+      puts "Got #{e["sequence_count"]} sequences for #{e["xschema"]}"
+    end
+  }
+  puts "Done."
+
   File.open('breakpoint6.dmp', 'w') { |f| Marshal.dump(exps, f) }
 
 end
+
 
 
 

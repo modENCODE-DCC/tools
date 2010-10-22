@@ -183,7 +183,7 @@ class Formatter
       col_index = Hash.new
       colors = [ "#DDDDFF", "#DDDDDD" ]
 
-      Formatter::format(exps, false, {"Description" => "uniquename", "Growth Condition" => "growth_condition", "DNAse Treatment" => "dnase_treatment", "Array Size" => "array_size", "Array Platform" => "array_platform"}) { |cols|
+      Formatter::format(exps, false, {"Description" => "uniquename", "Growth Condition" => "growth_condition", "DNAse Treatment" => "dnase_treatment", "Array Size" => "array_size", "Array Platform" => "array_platform", "Sequences" => "sequence_count" }) { |cols|
         f.puts "    <tr>"
         if header then
           cols.each_index { |idx| col_index[cols[idx]] = idx }
@@ -208,6 +208,7 @@ class Formatter
               factors.push "DNAseTreatment=#{cols[col_index["DNAse Treatment"]]}" if cols[col_index["DNAse Treatment"]].length > 0
               factors.push "Array=#{cols[col_index["Array Size"]]}" if cols[col_index["Array Size"]].length > 0
               factors.push "ArrayPlatform=#{cols[col_index["Array Platform"]]}" if cols[col_index["Array Platform"]].length > 0
+              factors.push "Sequences=#{cols[col_index["Sequences"]]}" if cols[col_index["Sequences"]] && cols[col_index["Sequences"]].to_i > 0
               line.push factors.map { |s| s.gsub(/, /, ",") }.join(";")
             elsif k == "Stage/Treatment" then
               stage = cols[idx]
@@ -302,7 +303,7 @@ class Formatter
       col_index = Hash.new
       colors = [ "#DDDDFF", "#DDDDDD" ]
 
-      Formatter::format(exps, false, {"Description" => "uniquename", "Growth Condition" => "growth_condition", "DNAse Treatment" => "dnase_treatment", "GFF Files" => "gff", "Array Size" => "array_size", "Array Platform" => "array_platform"}) { |cols|
+      Formatter::format(exps, false, {"Description" => "uniquename", "Growth Condition" => "growth_condition", "DNAse Treatment" => "dnase_treatment", "GFF Files" => "gff", "Array Size" => "array_size", "Array Platform" => "array_platform", "Sequences" => "sequence_count" }) { |cols|
         if header then
           cols.each_index { |idx| col_index[cols[idx]] = idx }
           f.puts col_order.join("\t")
@@ -330,6 +331,7 @@ class Formatter
               factors.push "DNAseTreatment=#{cols[col_index["DNAse Treatment"]]}" if cols[col_index["DNAse Treatment"]].length > 0
               factors.push "Array=#{cols[col_index["Array Size"]]}" if cols[col_index["Array Size"]].length > 0
               factors.push "ArrayPlatform=#{cols[col_index["Array Platform"]]}" if cols[col_index["Array Platform"]].length > 0
+              factors.push "Sequences=#{cols[col_index["Sequences"]]}" if cols[col_index["Sequences"]] && cols[col_index["Sequences"]].to_i > 0
               line.push factors.map { |s| s.gsub(/, /, ",") }.join(";")
             elsif k == "Cell Line" then
               #blank out the contents of stage, tissue, strain if cell line is present

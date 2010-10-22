@@ -72,6 +72,14 @@ class ChadoReporter
     return ret
   end
 
+  def get_number_of_features_of_type(schema, type)
+    sth = @dbh.prepare("SELECT COUNT(f.*) FROM #{schema}.feature f INNER JOIN #{schema}.cvterm cvt ON f.type_id = cvt.cvterm_id WHERE cvt.name = ?")
+    sth.execute(type)
+    ret = sth.fetch_array[0]
+    sth.finish
+    return ret
+  end
+
   def get_geo_ids_for_schema(schema)
     sth = @dbh.prepare("
       SELECT d.value FROM #{schema}.data d INNER JOIN #{schema}.cvterm cvt ON d.type_id = cvt.cvterm_id
@@ -604,6 +612,19 @@ class ChadoReporter
     gffs = sth.fetch_all.flatten
     sth.finish
     return gffs
+  end
+
+  def collect_sam(schema)
+    sth = @dbh.prepare("
+                       SELECT d.value FROM #{schema}.data d
+                       INNER JOIN #{schema}.cvterm cvt ON d.type_id = cvt.cvterm_id
+                       WHERE cvt.name = 'Sequence_Alignment/Map (SAM)'
+                       GROUP BY d.value
+                       ")
+    sth.execute
+    sams = sth.fetch_all.flatten
+    sth.finish
+    return sams
   end
 
   def recursively_find_referenced_specimens(curschema, specimens, all_specimens = Hash.new { |h,k| h[k] = Array.new } )
