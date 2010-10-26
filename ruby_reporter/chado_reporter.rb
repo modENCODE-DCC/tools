@@ -80,6 +80,18 @@ class ChadoReporter
     return ret
   end
 
+  def get_assay_type(schema)
+    sth = @dbh.prepare("SELECT value FROM #{schema}.experiment_prop WHERE name = 'Assay Type'")
+    sth.execute
+    ret = sth.fetch_array
+    sth.finish
+    if ret.nil?
+      return [] 
+    else
+      return [ ret[0] ]
+    end
+  end
+
   def get_geo_ids_for_schema(schema)
     sth = @dbh.prepare("
       SELECT d.value FROM #{schema}.data d INNER JOIN #{schema}.cvterm cvt ON d.type_id = cvt.cvterm_id

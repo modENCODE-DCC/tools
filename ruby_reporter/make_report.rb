@@ -599,9 +599,45 @@ else
     # Search through all of the protocol types to figure out the type of the 
     # experiment
     exps.each { |e|
-      # hybridization - ChIP = RNA tiling array
-      e["experiment_types"] = Array.new
       protocol_types = e["protocol_types"].map { |row| row["type"] }
+
+      e["experiment_types"] = r.get_assay_type(e["xschema"]) # Is it in the DB?
+      if e["experiment_types"].size > 0 && !e["experiment_types"][0].empty? then
+        # Use existing assay type
+        type = e["experiment_types"][0]
+        if type =~ /Gene Structure/ then
+          e["experiment_types"] = [ "gene model" ]
+        end
+        if type =~ /sample creation/i then
+          e["types"] = [ "N/A (metadata only)" ]
+        elsif type =~ /ChIP/ && e["types"].include?("signal data") then
+          e["types"].delete("signal data")
+          e["types"].push("chromatin binding site signal data")
+          if e["uniquename"] =~ /replication timing/i then
+            e["types"] = [ "replication timing" ]
+          elsif e["uniquename"] =~ /origin/i then
+            e["types"] = [ "origins of replication" ]
+          elsif e["uniquename"] =~ /(orc|mcm)[^a-z]/i then
+            e["types"] = [ "replication factors" ]
+          end
+        elsif type =~ /CAGE/ then
+          e["types"] = [ "RNA profiling" ]
+        else
+          e["types"].delete("binding sites") if e["types"].include?("chromatin binding sites")
+          e["types"].delete("binding sites") if e["types"].include?("chromatin binding site signal data")
+          if e["types"].size == 0 && (
+            (!e["GSE"].nil? && e["GSE"].length > 0) ||
+            e["GSM"].size > 0 ||
+            e["sra_ids"].size > 0
+          ) then
+          e["types"].push "raw sequences"
+          end
+        end
+        print "."
+        next
+      end
+
+      # hybridization - ChIP = RNA tiling array
       # extraction + sequencing + reverse transcription - ChIP = RTPCR
       # extraction + sequencing - reverse transcription - ChIP = RNA-seq
       if 
@@ -675,7 +711,7 @@ else
 
       # annotation = Computational annotation
       if 
-        protocol_types.find { |pt| pt =~ /annotation/i } && !e["experiment_types"].include?("RACE")
+        protocol_types.find { |pt| pt =~ /annotation/i } && !e["experiment_types"].include?("RACE") && !e["experiment_types"].include?("RTPCR")
         then
         e["experiment_types"].push "Computational annotation"
         # Also get rid of any reagents, since this really just analyzing old data
@@ -829,6 +865,8 @@ else
           # Piano partial submissions that should be labeled RNA-seq, but only provided the sequences
           if e["experiment_types"].include?("RNA-seq") && !e["protocol_types"].find { |row| row["type"] =~ /alignment/ }  then
             e["types"] = [ "raw sequences" ]
+          elsif e["experiment_types"].include?("RACE") || e["experiment_types"].include?("RTPCR") then
+            e["types"] = [ "gene model" ]
           else
             e["types"] = [ "RNA profiling" ]
           end
@@ -1047,10 +1085,30 @@ else
   }
   puts "Done."
 
+  puts "Trying to find the reaction count for RACE/RTPCR experiments."
+  exps.each { |e|
+    next unless e["experiment_types"].include?("RACE") || e["experiment_types"].include?("RTPCR")
+    reactions = r.get_number_of_features_of_type(e["xschema"], "mRNA")
+    if (
+      !reactions || reactions.to_i == 0 ||
+      e["project"] == "Piano" # Piano submission(s?) find the genes post-experiment, so we do want ESTs
+    ) then
+      reactions = r.get_number_of_features_of_type(e["xschema"], "EST")
+    end
+    e["reactions"] = reactions
+    if e["project"] == "Waterston" && e["lab"] == "Green" then
+      # Get the intron counts, too
+      introns = r.get_number_of_features_of_type(e["xschema"], "intron")
+      e["features"] = introns
+    end
+  }
+  puts "Done."
+
 
   File.open('breakpoint6.dmp', 'w') { |f| Marshal.dump(exps, f) }
 
 end
+
 
 
 
