@@ -601,7 +601,7 @@ else
     exps.each { |e|
       protocol_types = e["protocol_types"].map { |row| row["type"] }
 
-      e["experiment_types"] = r.get_assay_type(e["xschema"]) # Is it in the DB?
+      e["experiment_types"] = r.get_assay_type(e["xschema"]).map { |type| type == "" ? nil : type }.compact # Is it in the DB?
       if e["experiment_types"].size > 0 && !e["experiment_types"][0].empty? then
         # Use existing assay type
         type = e["experiment_types"][0]
@@ -610,7 +610,7 @@ else
         end
         if type =~ /sample creation/i then
           e["types"] = [ "N/A (metadata only)" ]
-        elsif type =~ /ChIP/ && e["types"].include?("signal data") then
+        elsif (type =~ /ChIP/ || type =~ /tiling array: DNA/) && e["types"].include?("signal data") then
           e["types"].delete("signal data")
           e["types"].push("chromatin binding site signal data")
           if e["uniquename"] =~ /replication timing/i then
@@ -892,8 +892,13 @@ else
         end
       end
 
-      if e["project"] == "MacAlpine" && e["experiment_types"].include?("tiling array: RNA") then
-        e["types"] = [ "copy number variation" ]
+      if e["project"] == "MacAlpine" then
+        if e["experiment_types"].include?("tiling array: RNA") then
+          e["experiment_types"] = [ "tiling array: DNA" ]
+          e["types"] = [ "copy number variation" ]
+        elsif e["experiment_types"].include?("DNA-seq") then
+          e["types"] = [ "copy number variation" ]
+        end
       end
 
       if (e["types"].delete("chromatin binding sites") || e["types"].delete("chromatin binding site signal data")) then
@@ -914,7 +919,11 @@ else
         e["types"].push(new_type)
       end
 
-      e["types"] = [ "chromatin" ] if e["types"].include?("signal data") && e["experiment_types"].include?("tiling array: DNA")
+      if e["experiment_types"].include?("tiling array: DNA") && e["types"].include?("signal data") then
+        if !e["types"].include?("replication timing") then
+          e["types"] = [ "chromatin" ]
+        end
+      end
 
       e["antibody_names"].uniq!; e["antibody_names"].compact!
       e["antibody_targets"].uniq!; e["antibody_targets"].compact!
