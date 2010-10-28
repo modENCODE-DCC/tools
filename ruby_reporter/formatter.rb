@@ -352,7 +352,9 @@ class Formatter
                end
                cell_lines = cols[idx]
                cell_lines = cell_lines.split(/, /)
-               if cell_lines.length > 1 then
+               if cell_lines.length > 3 then
+                 line.push "mixed"
+               elsif cell_lines.length > 1 then
                  line.push "mixed: " + cell_lines.join(", ")
                else
                  line.push cell_lines.join(", ")
