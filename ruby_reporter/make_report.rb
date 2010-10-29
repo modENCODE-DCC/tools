@@ -569,6 +569,8 @@ else
       e["growth_condition"].uniq!
       e["stage"].uniq! unless e["stage"].nil?
 
+      e["tissue"] = [ "whole organism" ] if e["tissue"].size == 0 && e["strain"].size > 0
+
       if e["tissue"].size > 1 && e["tissue"].include?("whole organism") then
         e["tissue"] -= ["whole organism"]
       end
@@ -605,6 +607,10 @@ else
       if e["experiment_types"].size > 0 && !e["experiment_types"][0].empty? then
         # Use existing assay type
         type = e["experiment_types"][0]
+        type.sub!(/Computational Annotation/i, "Computational annotation")
+        type.sub!(/Sample Creation/i, "Sample creation")
+        e["experiment_types"][0] = type
+
         if type =~ /Gene Structure/ then
           e["experiment_types"] = [ "gene model" ]
         end
@@ -867,8 +873,10 @@ else
             e["types"] = [ "raw sequences" ]
           elsif e["experiment_types"].include?("RACE") || e["experiment_types"].include?("RTPCR") then
             e["types"] = [ "gene model" ]
+          elsif e["experiment_types"].include?("Computational annotation")
+            e["types"] = [ "gene model" ]
           else
-            e["types"] = [ "RNA profiling" ]
+            e["types"] = [ "RNA profiling" ] unless e["types"].find { |t| t =~ /chromatin/ }
           end
         else
           e["types"] = [ "gene model" ]
@@ -903,7 +911,8 @@ else
 
       if (e["types"].delete("chromatin binding sites") || e["types"].delete("chromatin binding site signal data")) then
         new_type = "chromatin"
-        if !e["antibody_targets"].empty? || e["antibody_targets"].include?("na") || e["antibody_targets"].include?("none")
+        has_salt = e["compound"] && e["compound"].find { |compound| compound =~ /sodium chloride/ }
+        if !(e["antibody_targets"].empty? || e["antibody_targets"].include?("na") || e["antibody_targets"].include?("none")) || has_salt
           e["antibody_targets"].each_index do |i|
             abt = e["antibody_targets"][i]
             abn = e["antibody_names"][i]
