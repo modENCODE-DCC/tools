@@ -188,6 +188,7 @@ f.each { |line|
           values = geo_id_data.map { |d| d["value"] }
           if values.sort == geo_record.values.sort then
             puts "      All GEO IDs already in this submission!"
+            next
           else
             throw :more_than_one_unique_datum 
           end
@@ -245,11 +246,14 @@ f.each { |line|
         puts "        However, there is only 1 GEO ID to attach, so it is the same for all of them."
         sorted_data_ids = unique_data.sort
         v = geo_record.values.first
-        sorted_data_ids.each { |data_id|
-          puts "        Updating datum to #{v}."
-          sth_update.execute(v, data_id) unless NO_DB_COMMITS
-        }
-        break
+        if geo_id_data.first["value"] == v then
+          puts "          Actually, that ID is already in the DB"
+        else
+          sorted_data_ids.each { |data_id|
+            puts "        Updating datum to #{v}."
+            sth_update.execute(v, data_id) unless NO_DB_COMMITS
+          }
+        end
       else
         puts "        Fewer applied protocols for the datum than we expected:"
         puts geo_id_data.pretty_inspect
