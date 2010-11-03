@@ -66,7 +66,13 @@ marshal_list.each do |file|
         if unique_data.size == geo_record.values.size then
           geo_record.values.each_index { |i| geo_id_data[i]["value"] = geo_record.values[i] }
         else
-          throw :more_than_one_unique_datum
+          # Are the IDs already in there?
+          values = geo_id_data.map { |d| d["value"] }
+          if values.sort == geo_record.values.sort then
+            puts "      All GEO IDs already in this submission!"
+          else
+            throw :more_than_one_unique_datum 
+          end
         end
       else
         geo_record.values.each_index { |i| geo_id_data[i]["value"] = geo_record.values[i] }
@@ -107,11 +113,34 @@ marshal_list.each do |file|
       sth_last_data_id.finish
       sth_update_applied_protocol_data.finish
     else
-      puts "    Fewer applied protocols for the datum than we expected:"
-      puts geo_id_data.pretty_inspect
-      puts "!=!=!="
-      puts geo_record.values.pretty_inspect
-      throw :wtf_they_dont_line_up
+      puts "      More (or fewer) applied protocols using a GEO ID than GEO IDs to attach."
+      sth_update = db.prepare("UPDATE data SET value = ? WHERE data_id = ?")
+      if unique_data.size == geo_record.values.size then
+        puts "        However, there are as many unique datum(s) as GEO IDs to attach."
+        sorted_data_ids = unique_data.sort
+        sorted_data_ids.each_index { |i|
+          data_id = sorted_data_ids[i]
+          v = geo_record.values[i]
+          puts "        Updating datum to #{v}."
+          sth_update.execute(v, data_id) unless NO_DB_COMMITS
+        }
+      elsif geo_record.values.uniq.size == 1
+        puts "        However, there is only 1 GEO ID to attach, so it is the same for all of them."
+        sorted_data_ids = unique_data.sort
+        v = geo_record.values.first
+        sorted_data_ids.each { |data_id|
+          puts "        Updating datum to #{v}."
+          sth_update.execute(v, data_id) unless NO_DB_COMMITS
+        }
+        break
+      else
+        puts "        Fewer applied protocols for the datum than we expected:"
+        puts geo_id_data.pretty_inspect
+        puts "!=!=!="
+        puts geo_record.values.pretty_inspect
+        throw :wtf_they_dont_line_up
+      end
+      sth_update.finish
     end
   else
     puts "  No existing GEO datum, creating it/them"
