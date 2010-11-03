@@ -2,8 +2,12 @@
 
 require 'rubygems'
 require 'cgi'
-require 'dbi'
-require 'dbd/Pg'
+if File.exists?('dbi_patch.rb') then
+  require 'dbi_patch.rb'
+else
+  require 'dbi'
+  require 'dbd/Pg'
+end
 require 'pp'
 require '/var/www/submit/lib/pg_database_patch'
 require 'formatter'
@@ -1126,6 +1130,25 @@ else
   File.open('breakpoint6.dmp', 'w') { |f| Marshal.dump(exps, f) }
 
 end
+
+# Copy over missing info to deprecated experiment
+exps.each { |e|
+  if e["experiment_types"].size == 0 && e["deprecated"] then
+    deprecator = e
+    while deprecator["deprecated"] || deprecator["superseded"] do
+      deprecator = exps.find { |exp|
+        deprecator_id = deprecator["deprecated"] || deprecator["superseded"]
+        exp["xschema"] == "modencode_experiment_#{deprecator_id}_data"
+      }
+    end
+    e.each_key { |k|
+      next if (k == "superseded" || k == "deprecated")
+      if (e[k].is_a?(String) || e[k].is_a?(Array)) && e[k].empty? then
+        e[k] = deprecator[k]
+      end
+    }
+  end
+}
 
 
 

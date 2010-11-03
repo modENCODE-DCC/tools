@@ -1,5 +1,10 @@
 require 'rubygems'
-require 'dbi'
+if File.exists?('dbi_patch.rb') then
+  require 'dbi_patch.rb'
+else
+  require 'dbi'
+  require 'dbd/Pg'
+end
 require 'pp'
 
 class ChadoReporter
