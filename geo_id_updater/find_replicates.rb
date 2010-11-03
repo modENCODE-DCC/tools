@@ -167,6 +167,7 @@ f.each { |line|
   # Database!
   db.execute("SET search_path = modencode_experiment_#{pid}_data")
   if (geo_header_col) then
+    puts "  Found an existing GEO datum; updating it and creating new ones as necessary"
     sth_get_existing_record = db.prepare("SELECT apd.applied_protocol_data_id, apd.direction, apd.applied_protocol_id, d.data_id, d.value FROM applied_protocol_data apd INNER JOIN data d ON apd.data_id = d.data_id WHERE d.heading = ? AND d.name = ? ORDER BY data_id")
     sth_get_existing_record.execute(geo_header_col.heading, geo_header_col.name)
     geo_id_data = Array.new
@@ -212,12 +213,14 @@ f.each { |line|
       geo_id_data.each { |d|
         if d["data_id"].nil? then
           # Create new datum
+          puts "    Creating datum for #{d["value"]}"
           sth_create.execute(data_info["name"], data_info["heading"], d["value"], data_info["type_id"], data_info["dbxref_id"]) unless NO_DB_COMMITS
           sth_last_data_id.execute unless NO_DB_COMMITS
           last_id = sth_last_data_id.fetch_hash["last_value"] unless NO_DB_COMMITS
           sth_update_applied_protocol_data.execute(last_id, d["applied_protocol_data_id"]) unless NO_DB_COMMITS
         else
           # Update existing datum
+          puts "    Updating existing datum for #{d["value"]}"
           sth_update.execute(d["value"], d["data_id"]) unless NO_DB_COMMITS
         end
         n += 1
@@ -256,9 +259,8 @@ f.each { |line|
       end
       sth_update.finish
     end
-
   else
-    puts "No existing GEO datum, creating them"
+    puts "  No existing GEO datum, creating it/them"
     sth_find_protocol = db.prepare("SELECT ap.applied_protocol_id FROM applied_protocol ap INNER JOIN protocol p ON ap.protocol_id = p.protocol_id WHERE p.name = ? ORDER BY ap.applied_protocol_id")
     sth_find_protocol.execute(previous_protocol_name)
     existing_aps = Array.new
@@ -272,13 +274,14 @@ f.each { |line|
       # Okay, but it works for unique ones
       use_these_gsms = geo_record.values.uniq
     else
-      puts "#{existing_aps.size} APs for #{geo_record.values.size} GEO records"
+      puts "    #{existing_aps.size} APs for #{geo_record.values.size} GEO records"
       throw :ap_size_differs_from_geo_record_count
     end
     # Create a new datum for each geo record in order and attach it to each applied_protocol as an output
     if use_these_gsms.size != existing_aps.size then
       throw :wtf_i_thought_i_just_set_ap_sizes
     end
+
     geo_type_id = get_geo_type_id(db) unless NO_DB_COMMITS
 
     sth_create_data = db.prepare("INSERT INTO data (heading, name, value, type_id) VALUES(?, ?, ?, ?)")
@@ -291,8 +294,10 @@ f.each { |line|
       gsm = use_these_gsms[i]
       sth_datum_exists.execute(gsm)
       if sth_datum_exists.fetch_hash then
-        puts "Already a datum for #{gsm}"
+        puts "    Already a datum for #{gsm}"
         next
+      else
+        puts "    Creating datum for #{gsm}"
       end
       sth_create_data.execute("Result Value", "geo record", gsm, geo_type_id) unless NO_DB_COMMITS
       sth_last_data_id.execute unless NO_DB_COMMITS

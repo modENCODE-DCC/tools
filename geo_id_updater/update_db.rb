@@ -59,9 +59,10 @@ marshal_list.each do |file|
     }
     sth_get_existing_record.finish
 
+    unique_data = geo_id_data.map { |r| r["data_id"] }.uniq
     if geo_id_data.size == geo_record.values.size then
       # Perfect, they line up... Do we have to create more datums?
-      unique_data = geo_id_data.map { |r| r["data_id"] }.uniq
+
       if unique_data.size != 1 then
         if unique_data.size == geo_record.values.size then
           geo_record.values.each_index { |i| geo_id_data[i]["value"] = geo_record.values[i] }
@@ -100,7 +101,6 @@ marshal_list.each do |file|
           sth_last_data_id.execute
           last_id = sth_last_data_id.fetch_hash["last_value"]
           sth_update_applied_protocol_data.execute(last_id, d["applied_protocol_data_id"])
-
         else
           # Update existing datum
           puts "    Updating existing datum for #{d["value"]}"
