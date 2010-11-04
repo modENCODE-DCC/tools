@@ -123,7 +123,7 @@ marshal_list.each do |file|
           data_id = sorted_data_ids[i]
           v = geo_record.values[i]
           puts "        Updating datum to #{v}."
-          sth_update.execute(v, data_id) unless NO_DB_COMMITS
+          sth_update.execute(v, data_id)
         }
       elsif geo_record.values.uniq.size == 1
         puts "        However, there is only 1 GEO ID to attach, so it is the same for all of them."
@@ -134,7 +134,7 @@ marshal_list.each do |file|
         else
           sorted_data_ids.each { |data_id|
             puts "        Updating datum to #{v}."
-            sth_update.execute(v, data_id) unless NO_DB_COMMITS
+            sth_update.execute(v, data_id)
           }
         end
       else
@@ -160,6 +160,10 @@ marshal_list.each do |file|
     elsif existing_aps.size == geo_record.values.uniq.size then
       # Okay, but it works for unique ones
       use_these_gsms = geo_record.values.uniq
+    elsif geo_record.values.uniq.size == 1 then
+      # Okay, there's only one GSM so we apply it to all APs
+      gsm = geo_record.values.first
+      use_these_gsms = existing_aps.map { gsm }
     else
       puts "    #{existing_aps.size} APs for #{geo_record.values.size} GEO records"
       throw :ap_size_differs_from_geo_record_count
@@ -174,27 +178,36 @@ marshal_list.each do |file|
     sth_create_data = db.prepare("INSERT INTO data (heading, name, value, type_id) VALUES(?, ?, ?, ?)")
     sth_create_apd = db.prepare("INSERT INTO applied_protocol_data (applied_protocol_id, data_id, direction) VALUES(?, ?, 'output')")
     sth_last_data_id = db.prepare("SELECT last_value FROM generic_chado.data_data_id_seq")
-    sth_datum_exists = db.prepare("SELECT data_id FROM data WHERE name = 'geo record' AND value = ?")
+    sth_datum_exists = db.prepare("SELECT data_id FROM data WHERE (name = 'geo record' or name = 'GEO id') AND value = ?")
+    sth_apd_exists = db.prepare("SELECT applied_protocol_data_id FROM applied_protocol_data WHERE applied_protocol_id = ? AND data_id = ?")
 
     existing_aps.each_index { |i|
       ap = existing_aps[i]
       gsm = use_these_gsms[i]
       sth_datum_exists.execute(gsm)
-      if sth_datum_exists.fetch_hash then
+      data_row = sth_datum_exists.fetch_hash
+      if data_row then
         puts "    Already a datum for #{gsm}"
-        next
+        data_id = data_row["data_id"]
       else
-        puts "    Creating datum for #{gsm}"
+        puts "    Creating a datum for #{gsm}"
+        sth_create_data.execute("Result Value", "geo record", gsm, geo_type_id)
+        sth_last_data_id.execute
+        data_id = sth_last_data_id.fetch_hash["last_value"]
       end
-      sth_create_data.execute("Result Value", "geo record", gsm, geo_type_id)
-      sth_last_data_id.execute
-      last_id = sth_last_data_id.fetch_hash["last_value"]
-      sth_create_apd.execute(ap["applied_protocol_id"], last_id)
+      sth_apd_exists.execute(ap["applied_protocol_id"], data_id)
+      if sth_apd_exists.fetch_hash then
+        puts "      Already and applied_protocol_datum for #{gsm} and #{ap["applied_protocol_id"]}"
+      else
+        puts "      Creating applied_protocol_data entry for #{gsm} and #{ap["applied_protocol_id"]}"
+        sth_create_apd.execute(ap["applied_protocol_id"], data_id)
+      end
     }
     sth_create_data.finish
     sth_create_apd.finish
     sth_last_data_id.finish
-    sth_datum_exists .finish
+    sth_datum_exists.finish
+    sth_apd_exists.finish
   end
 end
 

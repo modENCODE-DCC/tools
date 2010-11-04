@@ -11,14 +11,25 @@ NO_DB_COMMITS = true
 def parse_sdrf(filename)
   f = File.open(filename)
 
+  record_seps = [ $/, "\r\n", "\r", "\n" ]
   has_quotes = false
-  header = f.readline.chomp.split(/\t/).map { |k| 
-    has_quotes = true if (k =~ /^"|"$/)
-    SDRFHeader.new(k.gsub(/^"|"$/, ''))
-  }
+  header = nil
+  while header.nil? && !record_seps.empty? do
+    separator = record_seps.shift
+    line = f.readline(separator)
+    if f.eof? then
+      # SDRF should be longer than one line; bad newline found?
+      f.rewind
+      next
+    end
+    header = line.chomp.split(/\t/).map { |k| 
+      has_quotes = true if (k =~ /^"|"$/)
+      SDRFHeader.new(k.gsub(/^"|"$/, ''))
+    }
+  end
   header.each { |s| s.has_quotes! } if has_quotes
 
-  f.each { |line|
+  f.each(separator) { |line|
     line.chomp!
     #num_at = Hash.new { |h, k| h[k] = Hash.new { |h1, k1| h1[k1] = 0 } }
     items = line.split(/\t/).map { |k| k.gsub(/^"|"$/, '') }
@@ -277,6 +288,10 @@ f.each { |line|
     elsif existing_aps.size == geo_record.values.uniq.size then
       # Okay, but it works for unique ones
       use_these_gsms = geo_record.values.uniq
+    elsif geo_record.values.uniq.size == 1 then
+      # Okay, there's only one GSM so we apply it to all APs
+      gsm = geo_record.values.first
+      use_these_gsms = existing_aps.map { gsm }
     else
       puts "    #{existing_aps.size} APs for #{geo_record.values.size} GEO records"
       throw :ap_size_differs_from_geo_record_count
@@ -291,27 +306,36 @@ f.each { |line|
     sth_create_data = db.prepare("INSERT INTO data (heading, name, value, type_id) VALUES(?, ?, ?, ?)")
     sth_create_apd = db.prepare("INSERT INTO applied_protocol_data (applied_protocol_id, data_id, direction) VALUES(?, ?, 'output')")
     sth_last_data_id = db.prepare("SELECT last_value FROM generic_chado.data_data_id_seq")
-    sth_datum_exists = db.prepare("SELECT data_id FROM data WHERE name = 'geo record' AND value = ?")
+    sth_datum_exists = db.prepare("SELECT data_id FROM data WHERE (name = 'geo record' or name = 'GEO id') AND value = ?")
+    sth_apd_exists = db.prepare("SELECT applied_protocol_data_id FROM applied_protocol_data WHERE applied_protocol_id = ? AND data_id = ?")
 
     existing_aps.each_index { |i|
       ap = existing_aps[i]
       gsm = use_these_gsms[i]
       sth_datum_exists.execute(gsm)
-      if sth_datum_exists.fetch_hash then
+      data_row = sth_datum_exists.fetch_hash
+      if data_row then
         puts "    Already a datum for #{gsm}"
-        next
+        data_id = data_row["data_id"]
       else
-        puts "    Creating datum for #{gsm}"
+        puts "    Creating a datum for #{gsm}"
+        sth_create_data.execute("Result Value", "geo record", gsm, geo_type_id) unless NO_DB_COMMITS
+        sth_last_data_id.execute unless NO_DB_COMMITS
+        data_id = sth_last_data_id.fetch_hash["last_value"] unless NO_DB_COMMITS
       end
-      sth_create_data.execute("Result Value", "geo record", gsm, geo_type_id) unless NO_DB_COMMITS
-      sth_last_data_id.execute unless NO_DB_COMMITS
-      last_id = sth_last_data_id.fetch_hash["last_value"] unless NO_DB_COMMITS
-      sth_create_apd.execute(ap["applied_protocol_id"], last_id) unless NO_DB_COMMITS
+      sth_apd_exists.execute(ap["applied_protocol_id"], data_id)
+      if sth_apd_exists.fetch_hash then
+        puts "      Already and applied_protocol_datum for #{gsm} and #{ap["applied_protocol_id"]}"
+      else
+        puts "      Creating applied_protocol_data entry for #{gsm} and #{ap["applied_protocol_id"]}"
+        sth_create_apd.execute(ap["applied_protocol_id"], data_id) unless NO_DB_COMMITS
+      end
     }
     sth_create_data.finish
     sth_create_apd.finish
     sth_last_data_id.finish
-    sth_datum_exists .finish
+    sth_datum_exists.finish
+    sth_apd_exists.finish
   end
   out_marshal = File.join(out.path, pid.to_s, "template.config")
   f = File.new(out_marshal, "w")
