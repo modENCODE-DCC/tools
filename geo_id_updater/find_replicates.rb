@@ -188,8 +188,12 @@ f.each { |line|
     sth_get_existing_record.finish
 
     unique_data = geo_id_data.map { |r| r["data_id"] }.uniq
-    if geo_id_data.size == geo_record.values.size then
+    if geo_id_data.size == geo_record.values.size || geo_id_data.size == geo_record.values.uniq.size then
       # Perfect, they line up... Do we have to create more datums?
+
+      if geo_id_data.size == geo_record.values.uniq.size then
+        geo_record.values.uniq!
+      end
 
       if unique_data.size != 1 then
         if unique_data.size == geo_record.values.size then
