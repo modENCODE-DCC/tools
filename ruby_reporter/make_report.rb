@@ -613,6 +613,7 @@ else
         type = e["experiment_types"][0]
         type.sub!(/Computational Annotation/i, "Computational annotation")
         type.sub!(/Sample Creation/i, "Sample creation")
+        type.sub!(/tiling array:\s*RNA/i, "tiling array: RNA")
         e["experiment_types"][0] = type
 
         if type =~ /Gene Structure/ then
