@@ -834,7 +834,7 @@ else
         # If not a target name on an antibody, what about a target ID attached to a
         # specimen in this project?  this might be the case for GFP or FLAG
         e["specimens"].each { |sp| 
-          target_id = sp["attributes"].find { |attr| attr["heading"] == "target id" }
+          target_id = sp["attributes"].find { |attr| attr["heading"] == "target id" || attr["heading"] == "transgene" }
           if target_id then
             target = target_id["value"]
             break
@@ -924,7 +924,12 @@ else
             if (new_name = is_histone_antibody(abt) || new_name = is_histone_antibody(abn)) then
               e["antibody_targets"][i] = new_name[0]
               e["antibody_names"][i] = (new_name[1].nil? || new_name[1].empty?) ? new_name[0] : new_name[1]
+              e["antibody_targets"].delete_if { |t| t =~ /^His.:/ }
               new_type = "chromatin modification"
+            end
+            # Consistent formatting:
+            if abn =~ /RNA\s*pol.*\s*II/i then
+              e["antibody_names"][i] = "RNA polymerase II"
             end
           end
         else
@@ -1008,7 +1013,7 @@ else
       arr["attributes"]
     }.map { |array_attrs|
       resolution = array_attrs.find { |a| a["heading"] == "resolution" }
-      resolution.nil? ? "" : resolution["value"].sub(/ bp/, 'bp')
+      resolution.nil? ? "" : resolution["value"].sub(/\s*base\s*pairs?|\s*bp/i, 'bp')
     }.uniq
     e["array_platform"] = e["arrays"].map { |arr|
       arr["attributes"]
