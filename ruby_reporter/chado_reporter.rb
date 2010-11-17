@@ -252,6 +252,17 @@ class ChadoReporter
     return ret
   end
 
+  def get_applied_protocol_data_count(heading, name, schema)
+    sth = @dbh.prepare("SELECT COUNT(apd.applied_protocol_data_id) FROM #{schema}.applied_protocol_data apd
+                        INNER JOIN #{schema}.data d ON apd.data_id = d.data_id
+                        WHERE d.heading = ? AND d.name = ? GROUP BY d.data_id, apd.direction")
+    sth.execute(heading, name)
+    count = 0
+    sth.fetch_array { |row|
+      count = [count, row[0].to_i].max
+    }
+    return count
+  end
   def get_attributes_for_datum(data_id, schema)
     sth = @dbh.prepare("
       SELECT attr.attribute_id, attr.heading, attr.name, attr.rank, attr.value, cv.name || ':' || cvt.name AS type, attr.dbxref_id AS attr_group 

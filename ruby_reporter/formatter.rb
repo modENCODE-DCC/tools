@@ -299,14 +299,14 @@ class Formatter
       i = 0
       col_order = [
         "Description", "Project", "Lab", "Assay", "Data Type",
-        "Experimental Factor", "Treatment", "Organism", "Cell Line", "Strain",
-        "Tissue", "Stage/Treatment", "Date Data Submitted", "Release Date",
-        "Status", "Submission ID", "GEO/SRA IDs", "GFF Files"
+        "Experimental Factor", "Replicates", "Treatment", "Organism", "Cell Line",
+        "Strain", "Tissue", "Stage/Treatment", "Date Data Submitted",
+        "Release Date", "Status", "Submission ID", "GEO/SRA IDs", "GFF Files"
       ]
       col_index = Hash.new
       colors = [ "#DDDDFF", "#DDDDDD" ]
 
-      Formatter::format(exps, false, {"Description" => "uniquename", "Growth Condition" => "growth_condition", "DNAse Treatment" => "dnase_treatment", "GFF Files" => "gff", "Array Size" => "array_size", "Array Platform" => "array_platform", "Sequences" => "sequence_count", "Version" => "version", "Reactions" => "reactions", "Features" => "features" }) { |cols|
+      Formatter::format(exps, false, {"Description" => "uniquename", "Replicates" => "replicates", "Growth Condition" => "growth_condition", "DNAse Treatment" => "dnase_treatment", "GFF Files" => "gff", "Array Size" => "array_size", "Array Platform" => "array_platform", "Sequences" => "sequence_count", "Version" => "version", "Reactions" => "reactions", "Features" => "features" }) { |cols|
         if header then
           cols.each_index { |idx| col_index[cols[idx]] = idx }
           f.puts col_order.join("\t")
@@ -337,6 +337,8 @@ class Formatter
               factors.push "Reactions=#{cols[col_index["Reactions"]]}" if cols[col_index["Reactions"]] && cols[col_index["Reactions"]].to_i > 1
               factors.push "Features=#{cols[col_index["Features"]]}" if cols[col_index["Features"]] && cols[col_index["Features"]].to_i > 1
               line.push factors.map { |s| s.gsub(/, /, ",") }.join(";")
+            elsif k == "Replicates" then
+              line.push cols[col_index["Replicates"]]
             elsif k == "Treatment" then
               treatments = Array.new
               treatments.push "RNAiTarget=#{cols[col_index["RNAi Target"]]}" if cols[col_index["RNAi Target"]].length > 0
@@ -443,7 +445,7 @@ class Formatter
               #status = cols[idx]
               line.push status
             elsif idx.nil? then
-              puts "No column for #{k}"
+              puts "No column for '#{k}' in #{cols[col_index["Submission ID"]]}"
               line.push ""
             else
               line.push cols[col_index[k]]

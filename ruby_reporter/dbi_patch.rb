@@ -45,6 +45,7 @@ class DBI::DBD::Pg::Database
         @type_map[1114] ||= DBI::Type::Timestamp # TIMESTAMP WITHOUT TIME ZONE
 
         # remap array subtypes
+        need_to_add_composites = Hash.new
         @type_map.each_key do |key|
             if @type_map[key]["dbi_type"].class == DBI::DBD::Pg::Type::Array
                 oid = @type_map[key]["dbi_type"].base_type
@@ -53,9 +54,14 @@ class DBI::DBD::Pg::Database
                 else
                     # punt
                     @type_map[key] = DBI::DBD::Pg::Type::Array.new(DBI::Type::Varchar)
+                    if !@type_map[oid] then
+                        # Oops, no underlying type (composite?)
+                        need_to_add_composites[oid.to_i] = { "dbi_type" => DBI::DBD::Pg::Type::Array.new(DBI::Type::Varchar) }
+                    end
                 end
             end
         end
+        @type_map.merge!(need_to_add_composites)
         File.new("type_map.marshal", "w").puts(Marshal.dump(@type_map))
         puts "Created new type map"
     end

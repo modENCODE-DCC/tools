@@ -9,7 +9,7 @@ else
   require 'dbd/Pg'
 end
 require 'pp'
-require '/var/www/submit/lib/pg_database_patch'
+#require '/var/www/submit/lib/pg_database_patch'
 require 'formatter'
 require 'chado_reporter'
 require 'geo'
@@ -129,6 +129,7 @@ else
             print "."; $stdout.flush
             data = r.get_data_for_schema(e["xschema"])
             data = data.uniq_by { |d| [ d["heading"], d["name"], d["value"] ] }
+            e["all_data"] = data
 
             # Are there any BAM files? If so, add "alignments" to the types
             # of data in this experiment
@@ -214,7 +215,7 @@ else
       specimens_by_schema = r.recursively_find_referenced_specimens(e["xschema"], e["specimens"])
 
       all_specimens = specimens_by_schema.values.flatten(1)
-      e["specimens"] = all_specimens
+      e["all_specimens"] = e["specimens"] = all_specimens
 
     }
     puts "Done."
@@ -1132,29 +1133,104 @@ else
   }
   puts "Done."
 
+  # Copy over missing info to deprecated experiment
+  exps.each { |e|
+    if e["experiment_types"].size == 0 && e["deprecated"] then
+      deprecator = e
+      while deprecator["deprecated"] || deprecator["superseded"] do
+        deprecator = exps.find { |exp|
+          deprecator_id = deprecator["deprecated"] || deprecator["superseded"]
+          exp["xschema"] == "modencode_experiment_#{deprecator_id}_data"
+        }
+      end
+      deprecator.each_key { |k|
+        next if (k == "superseded" || k == "deprecated")
+        if e[k].nil? || ((e[k].is_a?(String) || e[k].is_a?(Array)) && e[k].empty?) then
+          e[k] = deprecator[k]
+        end
+      }
+    end
+  }
 
   File.open('breakpoint6.dmp', 'w') { |f| Marshal.dump(exps, f) }
 
 end
 
-# Copy over missing info to deprecated experiment
+# Get replicate count
 exps.each { |e|
-  if e["experiment_types"].size == 0 && e["deprecated"] then
-    deprecator = e
-    while deprecator["deprecated"] || deprecator["superseded"] do
-      deprecator = exps.find { |exp|
-        deprecator_id = deprecator["deprecated"] || deprecator["superseded"]
-        exp["xschema"] == "modencode_experiment_#{deprecator_id}_data"
+  e["replicates"] = nil
+
+  if e["all_data"].nil? 
+   if e["released_at"] == "" then #|| e["deprecated"] then
+     e["replicates"] = "NOT RELEASED"
+     next
+   else
+     puts e["xschema"]
+     puts "  NO DATA"
+     exit
+   end
+  end
+
+  # *extract*
+  extracts = e["all_data"].find_all { |d| d["heading"] =~ /extract/i || d["name"] =~ /extract/i }
+  reps = extracts.map { |d| d["value"].sub(/ (Nucleosomes|Pull-down|Input)/, '') }.uniq.compact.size
+  e["replicates"] = reps if reps > 0
+
+  # Sample Name
+  if e["replicates"].nil? then
+    samples = e["all_data"].find_all { |d| d["heading"] =~ /Sample\s*Names?/i }
+    reps = samples.map { |d| d["value"] }.uniq.compact.size
+    e["replicates"] = reps if reps > 0
+  end
+
+  # explicit pool values
+  ## 2501 has Result Value [pool] as the only divider
+  if e["replicates"].nil? then
+    special = e["all_data"].find_all { |d| d["heading"] =~ /(Parameter|Result)\s*Values?/i && d["name"] =~ /pool/i }
+    if special.size > 0 then
+      reps = 0
+      special.each { |d|
+        pool_count = r.get_applied_protocol_data_count(d["heading"], d["name"], e["xschema"])
+        reps = [ pool_count, reps ].max
       }
+      e["replicates"] = "IFFY: #{reps}" if reps > 0
     end
-    e.each_key { |k|
-      next if (k == "superseded" || k == "deprecated")
-      if (e[k].is_a?(String) || e[k].is_a?(Array)) && e[k].empty? then
-        e[k] = deprecator[k]
-      end
-    }
+  end
+
+  # Result File
+  if e["replicates"].nil? then
+    results = e["all_data"].find_all { |d| d["heading"] =~ /Result\s*Files?/i }
+    if results.size > 0 then
+      uniq_heading_and_name = results.uniq_by { |d| [ d["heading"], d["name"] ] }.map { |d| [ d["heading"], d["name"] ] }
+      reps = nil
+      uniq_heading_and_name.each { |hn|
+        count = results.find_all { |d| d["heading"] == hn[0] && d["name"] == hn[1] }.map { |d| d["value"] }.uniq.compact.size
+        reps = reps.nil? ? count : [ reps, count ].min
+      }
+      e["replicates"] = reps if reps > 0
+    end
+  end
+
+  # GEO ID
+  if e["replicates"].nil? then
+    geoids = e["all_data"].find_all { |d| d["name"] =~ /GEO/i }
+    reps = geoids.map { |d| d["value"] }.uniq.compact.size
+    e["replicates"] = reps if reps > 0
+  end
+
+
+  e["replicates"] = "COMPUTATIONAL ANNOTATION" if e["experiment_types"].include?("Computational annotation")
+  e["replicates"] = "SAMPLE CREATION" if e["experiment_types"].include?("Sample creation")
+
+  if (e["replicates"].nil? || e["replicates"] == 0 || e["replicates"] == "MISSING") then
+    puts e["xschema"]
+    puts "  No replicate info!"
+    puts e["experiment_types"].pretty_inspect
+    puts e["all_data"].map { |d| "#{d["heading"]} [#{d["name"]}] = #{d["value"]}" }.pretty_inspect
+    exit
   end
 }
+
 
 
 
