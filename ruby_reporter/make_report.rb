@@ -620,7 +620,7 @@ else
         if type =~ /Gene Structure/ then
           e["experiment_types"] = [ "gene model" ]
         end
-        if type =~ /sample creation/i then
+        if type =~ /Sample creation/i then
           e["types"] = [ "N/A (metadata only)" ]
         elsif (type =~ /ChIP/ || type =~ /tiling array: DNA/) && e["types"].include?("signal data") then
           e["types"].delete("signal data")
@@ -693,7 +693,7 @@ else
               e["experiment_types"].push "RTPCR"
             end
           else
-            e["experiment_types"].push "sample creation"
+            e["experiment_types"].push "Sample creation"
             e["types"] = [ "N/A (metadata only)" ]
           end
       end
@@ -739,7 +739,7 @@ else
       end
 
       # If we haven't found a type yet, and there is a growth protocol, then
-      # this is probably an RNA sample creation experiment from Celniker
+      # this is probably an RNA Sample creation experiment from Celniker
       if 
         e["experiment_types"].size == 0 && 
           (
@@ -748,7 +748,7 @@ else
           )
       then
         e["types"] = [ "N/A (metadata only)" ]
-        e["experiment_types"].push "sample creation"
+        e["experiment_types"].push "Sample creation"
         e["antibody_names"] = [ "N/A" ]
         e["antibody_targets"] = [ "N/A" ]
       end
@@ -1173,15 +1173,33 @@ exps.each { |e|
 
   # *extract*
   extracts = e["all_data"].find_all { |d| d["heading"] =~ /extract/i || d["name"] =~ /extract/i }
-  reps = extracts.map { |d| d["value"].sub(/ (Nucleosomes|Pull-down|Input)/, '') }.uniq.compact.size
+  reps = extracts.map { |d| d["value"].sub(/ (Nucleosomes|Pull-down|Input)/, '').sub(/^(Extract|Control)\d$/, '\1') }.uniq.compact.size
   e["replicates"] = reps if reps > 0
 
   # Sample Name
+  samples = Array.new
   if e["replicates"].nil? then
     samples = e["all_data"].find_all { |d| d["heading"] =~ /Sample\s*Names?/i }
-    reps = samples.map { |d| d["value"] }.uniq.compact.size
+    if samples.find { |s| s["attributes"] && s["attributes"].find { |a| a["name"] =~ /replicate set/ } } then
+      samples = samples.map { |s| s["attributes"].find { |a| a["name"] =~ /replicate set/ } }
+    end
+    reps = samples.map { |d| d["value"].sub(/\d.of.\d_rep/, 'rep').sub(/\d[_-]\d[_-](\d)$/, '\1') }.uniq.compact.size
     e["replicates"] = reps if reps > 0
   end
+
+  # Oliver submissions that are really just 1 replicate, prolly
+  if e["project"] == "Oliver" && e["all_data"].find { |d| d["heading"] =~ /Parameter\s*Values?/i && d["name"] =~ /pipeline version/i } then
+    stages = e["all_data"].find_all { |d| d["heading"] =~ /(Parameter|Result)\s*Values?/i && d["name"] =~ /stage/i }
+    if stages.size > 0 then
+      reps = 0
+      stages.each { |d|
+        pool_count = r.get_applied_protocol_data_count(d["heading"], d["name"], e["xschema"])
+        reps = [ pool_count, reps ].max
+      }
+      e["replicates"] = "IFFY: OLIVER: #{reps}" if reps > 0
+    end
+  end
+
 
   # explicit pool values
   ## 2501 has Result Value [pool] as the only divider
@@ -1193,7 +1211,7 @@ exps.each { |e|
         pool_count = r.get_applied_protocol_data_count(d["heading"], d["name"], e["xschema"])
         reps = [ pool_count, reps ].max
       }
-      e["replicates"] = "IFFY: #{reps}" if reps > 0
+      e["replicates"] = "IFFY: POOL: #{reps}" if reps > 0
     end
   end
 
@@ -1220,7 +1238,7 @@ exps.each { |e|
 
 
   e["replicates"] = "COMPUTATIONAL ANNOTATION" if e["experiment_types"].include?("Computational annotation")
-  e["replicates"] = "SAMPLE CREATION" if e["experiment_types"].include?("Sample creation")
+  e["replicates"] = "SAMPLE CREATION" if e["experiment_types"].find { |t| t =~ /Sample creation/i }
 
   if (e["replicates"].nil? || e["replicates"] == 0 || e["replicates"] == "MISSING") then
     puts e["xschema"]
