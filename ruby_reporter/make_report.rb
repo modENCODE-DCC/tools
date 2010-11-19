@@ -1172,18 +1172,27 @@ exps.each { |e|
   end
 
   # *extract*
-  extracts = e["all_data"].find_all { |d| d["heading"] =~ /extract/i || d["name"] =~ /extract/i }
-  reps = extracts.map { |d| d["value"].sub(/ (Nucleosomes|Pull-down|Input)/, '').sub(/^(Extract|Control)\d$/, '\1') }.uniq.compact.size
+  extracts = e["all_data"].find_all { |d| d["heading"] =~ /extract\b/i || d["name"] =~ /extract\b/i }.reject { |d| d["value"] == nil || d["value"].empty? }
+  reps = 0
+  extracts.uniq_by { |d| [ d["heading"], d["name"] ] }.map { |d| [ d["heading"], d["name"] ] }.each { |unq|
+    unq = extracts.find_all { |d| d["heading"] == unq[0] && d["name"] == unq[1] }.map { |d| d["value"].sub(/ (Nucleosomes|Pull-down|Input)/, '').sub(/^(Extract|Control)\d$/, '\1').sub(/(_GEL|_BULK)$/, '') }.uniq.compact.size
+    reps = [reps, unq].max
+  }
+#  reps = extracts.map { |d| d["value"].sub(/ (Nucleosomes|Pull-down|Input)/, '').sub(/^(Extract|Control)\d$/, '\1').sub(/(_GEL|_BULK)$/, '') }.uniq.compact.size
   e["replicates"] = reps if reps > 0
 
   # Sample Name
   samples = Array.new
   if e["replicates"].nil? then
     samples = e["all_data"].find_all { |d| d["heading"] =~ /Sample\s*Names?/i }
+    if !samples.find { |s| s["attributes"] } then
+      # Didn't get them earlier
+      samples.each { |s| attrs = r.get_attributes_for_datum(s["data_id"], e["xschema"]); s["attributes"] = attrs }
+    end
     if samples.find { |s| s["attributes"] && s["attributes"].find { |a| a["name"] =~ /replicate set/ } } then
       samples = samples.map { |s| s["attributes"].find { |a| a["name"] =~ /replicate set/ } }
     end
-    reps = samples.map { |d| d["value"].sub(/\d.of.\d_rep/, 'rep').sub(/\d[_-]\d[_-](\d)$/, '\1') }.uniq.compact.size
+    reps = samples.map { |d| d["value"].sub(/\d.of.\d_rep/, 'rep').sub(/\d[_-]\d[_-](\d)$/, '\1').sub(/(Input|ChipSeq)_(\d)/i, '\2') }.uniq.compact.size
     e["replicates"] = reps if reps > 0
   end
 
@@ -1196,7 +1205,7 @@ exps.each { |e|
         pool_count = r.get_applied_protocol_data_count(d["heading"], d["name"], e["xschema"])
         reps = [ pool_count, reps ].max
       }
-      e["replicates"] = "IFFY: OLIVER: #{reps}" if reps > 0
+      e["replicates"] = reps if reps > 0
     end
   end
 
@@ -1211,7 +1220,7 @@ exps.each { |e|
         pool_count = r.get_applied_protocol_data_count(d["heading"], d["name"], e["xschema"])
         reps = [ pool_count, reps ].max
       }
-      e["replicates"] = "IFFY: POOL: #{reps}" if reps > 0
+      e["replicates"] = reps if reps > 0
     end
   end
 
