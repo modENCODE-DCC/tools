@@ -78,7 +78,14 @@ class ChadoReporter
   end
 
   def get_number_of_features_of_type(schema, type)
-    sth = @dbh.prepare("SELECT COUNT(f.*) FROM #{schema}.feature f INNER JOIN #{schema}.cvterm cvt ON f.type_id = cvt.cvterm_id WHERE cvt.name = ?")
+    sth = @dbh.prepare("SELECT COUNT(f.feature_id) FROM #{schema}.feature f INNER JOIN #{schema}.cvterm cvt ON f.type_id = cvt.cvterm_id WHERE cvt.name = ?")
+    sth.execute(type)
+    ret = sth.fetch_array[0]
+    sth.finish
+    return ret
+  end
+  def get_number_of_data_of_type(schema, type)
+    sth = @dbh.prepare("SELECT COUNT(d.data_id) FROM #{schema}.data d INNER JOIN #{schema}.cvterm cvt ON d.type_id = cvt.cvterm_id WHERE cvt.name = ?")
     sth.execute(type)
     ret = sth.fetch_array[0]
     sth.finish

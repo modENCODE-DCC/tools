@@ -904,6 +904,9 @@ else
             e["types"] = [ "RNA profiling" ]
           end
         end
+        if e["types"].include?("RNA profiling") && [ "White", "Lieb", "Karpen" ].include?(e["project"]) then
+          e["types"] = [ "transcription" ]
+        end
       end
 
       if e["project"] == "MacAlpine" then
@@ -961,6 +964,9 @@ else
       e["antibody_targets"] = e["antibody_targets"].map { |abtarget| abtarget.gsub(/Enhanced Green Fluorescent Protein/, 'eGFP') }
       e["antibody_targets"] = e["antibody_targets"].map { |abtarget| (abtarget =~ /^n(\/?)a$/i) ? "none" : abtarget }
       e["antibody_targets"] = [] if ( e["antibody_targets"] == [ "none" ] && e["types"].include?("N/A (metadata only)") )
+
+      # Some cleanup
+      e["antibody_targets"].each { |abtarget| abtarget.sub!(/nejire/, 'nej') }
     }
 
     # Throw out any deprecated or unreleased projects; look up the status in the pipeline
@@ -1129,6 +1135,10 @@ else
       # Get the intron counts, too
       introns = r.get_number_of_features_of_type(e["xschema"], "intron")
       e["features"] = introns
+    end
+    if (reactions.to_i > 10000) then
+      # Probably a Celniker RACE-seq experiment
+      e["reactions"] = r.get_number_of_data_of_type(e["xschema"], "transcript")
     end
   }
   puts "Done."
