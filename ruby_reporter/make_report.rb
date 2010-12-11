@@ -118,7 +118,9 @@ else
           exps.each { |e|
             print "."; $stdout.flush
             e["organisms"] = r.get_organisms_for_experiment(e["xschema"])
-            e["organisms"].delete_if { |o| o["genus"] == "Unknown" }
+            e["organisms"].delete_if { |o|
+              o["genus"] == "Unknown" || o["genus"] == "N/A"
+            }
           }
           print "\n"
 
@@ -914,6 +916,9 @@ else
           e["experiment_types"] = [ "tiling array: DNA" ]
           e["types"] = [ "copy number variation" ]
         elsif e["experiment_types"].include?("DNA-seq") then
+          e["types"] = [ "copy number variation" ]
+        elsif e["xschema"] =~ /_725_/ then
+          # Bad case with no feature data; similar submissions were all deprecated
           e["types"] = [ "copy number variation" ]
         end
       end
