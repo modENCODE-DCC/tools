@@ -61,7 +61,7 @@ class Formatter
       cols.push e["array_platform"].join(", ")
       cols.push e["rnai_targets"].join(", ")
       cols.push e["created_at"]
-      cols.push e["released_at"]
+      cols.push((e["status"] == "released" || e["status"] == "published" || e["status"] == "deprecated" || e["status"] == "superseded") ? e["released_at"] : "")
       geo_ids = [e["GSE"]]
       geo_ids += e["GSM"] unless e["GSM"].nil?
       geo_ids += e["sra_ids"] unless e["sra_ids"].nil?
