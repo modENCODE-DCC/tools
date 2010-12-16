@@ -1,0 +1,48 @@
+lazy_qc_checks: true
+max_cache_age: 82800 # 23 hours (for cron jobs that run daily)
+cache_file: /tmp/cgb.cache
+
+cgb_wiki:
+  uri: "https://USERNAME:PASSWORD@wiki.cgb.indiana.edu/display/modencode/"
+  page: "RNA+made+in+Bloomington"
+
+modencode_wiki:
+  uri: "http://USERNAME:PASSWORD@wiki.modencode.org/project/"
+
+dbfields:
+  uri: "http://USERNAME:PASSWORD@wiki.modencode.org/project/extensions/DBFields/DBFieldsService.wsdl"
+
+mappings:
+  Trizol:
+    page: "Trizol_small_RNA_extraction:SC:Cherbas"
+    desc: "RNA extraction: TRIzol procedure for cell lines"
+  RNeasy:
+    page: "RNeasy_Total_RNA_extraction:SC:Cherbas"
+    desc: "RNA isolation protocol: TRIzol procedure followed by DNase and RNeasy"
+  polyA:
+    page: "Poly(A)+_RNA_extraction:SC:Cherbas"
+    desc: "polyA RNA extraction"
+  Northern:
+    page: "Northern_blot:SC:1"
+    desc: "RNA QC: Northern"
+  miRNA Northern:
+    page: "Northern_blot:SC:1"
+    desc: "RNA QC: miRNA Northern"
+  Nuclear RNA:
+    page: "Nuclear_RNA_preparation:SC:1"
+    desc: "Nuclear RNA isolation"
+  Trizol-Tissues:
+    page: "RNA_extraction:_TRIzol_procedure_for_insect_tissues:SC:1"
+    desc: "TRIzol procedure for insect tissues"
+  Bulk isolation:
+    page: "RNA_extraction:_TRIzol_procedure_for_insect_tissues:SC:1"
+    desc: "TRIzol procedure for insect tissues"
+  mirVana:
+    page: "Short RNA preparation from whole Drosophila cells for polyA Tailing:SC:1"
+    desc: "mirVana shortRNA from cell lines"
+  Genomic DNA:
+    page: "Genomic DNA from fly embryos:SC:1"
+    desc: "Genomic DNA from fly embryos"
+  Trizol-Treated Insects:
+    page: "RNA_extraction:_TRIzol_procedure_for_insect_tissues:SC:1"
+    desc: "TRIzol procedure for insect tissues"
