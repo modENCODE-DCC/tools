@@ -93,7 +93,7 @@ abs.each { |ab|
   display_base = URI.parse(@config["cgb_wiki"]["uri"])
   display_base.user = display_base.password = nil
   cgb_page.protocols = ([ ab[:prep_page] ] + ab[:qc_pages].to_a).compact.map { |p|
-    m = @config["mappings"][p[0].to_s.gsub(/^\s*|\s*$/)]
+    m = @config["mappings"][p[0].to_s.gsub(/^\s*|\s*$/, '')]
     # If there's a mapping for it, use that
     # Otherwise, if there was a URL on the original page, use that
     # Otherwise, it's a link to the CGB wiki from the original page.
