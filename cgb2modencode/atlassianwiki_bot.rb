@@ -21,19 +21,19 @@ class AtlassianwikiBot
   def get_page_text(title)
     r = get_page(title)
     m = r.body.match(/id="editPageLink"[^>]*href="([^"]*)"/)
-    raise RuntimeException.new("Couldn't find edit page link for #{title}") unless m
+    raise RuntimeError.new("Couldn't find edit page link for #{title}") unless m
     r = get_page(m[1])
     m = r.body.match(/<textarea[^>]*name="content"[^>]*>([^<]*)</m) 
-    raise RuntimeException.new("Couldn't find content on edit page for #{title}") unless m
+    raise RuntimeError.new("Couldn't find content on edit page for #{title}") unless m
     content = CGI::unescapeHTML(m[1])
   end
 
   def get_page_text_for_content(body)
     m = body.match(/id="editPageLink"[^>]*href="([^"]*)"/)
-    raise RuntimeException.new("Couldn't find edit page link for #{title}") unless m
+    raise RuntimeError.new("Couldn't find edit page link for #{title}") unless m
     r = get_page(m[1])
     m = r.body.match(/<textarea[^>]*name="content"[^>]*>([^<]*)</m) 
-    raise RuntimeException.new("Couldn't find content on edit page for #{title}") unless m
+    raise RuntimeError.new("Couldn't find content on edit page for #{title}") unless m
     content = CGI::unescapeHTML(m[1])
   end
 

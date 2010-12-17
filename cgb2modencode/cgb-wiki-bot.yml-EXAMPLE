@@ -43,6 +43,9 @@ mappings:
   Genomic DNA:
     page: "Genomic DNA from fly embryos:SC:1"
     desc: "Genomic DNA from fly embryos"
+  genomic DNA:
+    page: "Genomic DNA from fly embryos:SC:1"
+    desc: "Genomic DNA from fly embryos"
   Trizol-Treated Insects:
     page: "RNA_extraction:_TRIzol_procedure_for_insect_tissues:SC:1"
     desc: "TRIzol procedure for insect tissues"
