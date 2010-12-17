@@ -614,7 +614,7 @@ else
       if e["experiment_types"].size > 0 && !e["experiment_types"][0].empty? then
         # Use existing assay type
         type = e["experiment_types"][0]
-        type.sub!(/Computational Annotation/i, "Computational annotation")
+        type.sub!(/Computation(al)? Annotation/i, "Computational annotation")
         type.sub!(/Sample Creation/i, "Sample creation")
         type.sub!(/tiling array:\s*RNA/i, "tiling array: RNA")
         e["experiment_types"][0] = type
@@ -1069,6 +1069,26 @@ else
   }
   puts "Done."
 
+# Get RNAsize
+puts "Collecting RNAsize information"
+exps.each { |e|
+  e["rna_size"] = r.get_rnasize(e["xschema"])
+}
+# Figure out if it's a biological_validation_design experiment
+puts "Collecting biological_validation_design information"
+exps.each { |e|
+  designs = r.get_experimental_designs(e["xschema"])
+  if designs.include?("biological_validation_design") then
+    e["biological_validation"] = "Y"
+  else
+    e["biological_validation"] = ""
+  end
+}
+
+
+
+
+
   # Get any projects that aren't in Chado yet
   chado_ids = exps.map { |e| e["xschema"].match(/_(\d+)_/)[1].to_i }
 
@@ -1167,113 +1187,112 @@ else
     end
   }
 
+  # Get replicate count
+  exps.each { |e|
+    e["replicates"] = nil
+
+    if e["all_data"].nil? 
+     if e["released_at"] == "" then #|| e["deprecated"] then
+       e["replicates"] = "NOT RELEASED"
+       next
+     else
+       puts e["xschema"]
+       puts "  NO DATA"
+       exit
+     end
+    end
+
+    # *extract*
+    extracts = e["all_data"].find_all { |d| d["heading"] =~ /extract\b/i || d["name"] =~ /extract\b/i }.reject { |d| d["value"] == nil || d["value"].empty? }
+    reps = 0
+    extracts.uniq_by { |d| [ d["heading"], d["name"] ] }.map { |d| [ d["heading"], d["name"] ] }.each { |unq|
+      unq = extracts.find_all { |d| d["heading"] == unq[0] && d["name"] == unq[1] }.map { |d| d["value"].sub(/ (Nucleosomes|Pull-down|Input)/, '').sub(/^(Extract|Control)\d$/, '\1').sub(/(_GEL|_BULK)$/, '') }.uniq.compact.size
+      reps = [reps, unq].max
+    }
+  #  reps = extracts.map { |d| d["value"].sub(/ (Nucleosomes|Pull-down|Input)/, '').sub(/^(Extract|Control)\d$/, '\1').sub(/(_GEL|_BULK)$/, '') }.uniq.compact.size
+    e["replicates"] = reps if reps > 0
+
+    # Sample Name
+    samples = Array.new
+    if e["replicates"].nil? then
+      samples = e["all_data"].find_all { |d| d["heading"] =~ /Sample\s*Names?/i }
+      if !samples.find { |s| s["attributes"] } then
+        # Didn't get them earlier
+        samples.each { |s| attrs = r.get_attributes_for_datum(s["data_id"], e["xschema"]); s["attributes"] = attrs }
+      end
+      if samples.find { |s| s["attributes"] && s["attributes"].find { |a| a["name"] =~ /replicate set/ } } then
+        samples = samples.map { |s| s["attributes"].find { |a| a["name"] =~ /replicate set/ } }
+      end
+      reps = samples.map { |d| d["value"].sub(/\d.of.\d_rep/, 'rep').sub(/\d[_-]\d[_-](\d)$/, '\1').sub(/(Input|ChipSeq)_(\d)/i, '\2') }.uniq.compact.size
+      e["replicates"] = reps if reps > 0
+    end
+
+    # Oliver submissions that are really just 1 replicate, prolly
+    if e["project"] == "Oliver" && e["all_data"].find { |d| d["heading"] =~ /Parameter\s*Values?/i && d["name"] =~ /pipeline version/i } then
+      stages = e["all_data"].find_all { |d| d["heading"] =~ /(Parameter|Result)\s*Values?/i && d["name"] =~ /stage/i }
+      if stages.size > 0 then
+        reps = 0
+        stages.each { |d|
+          pool_count = r.get_applied_protocol_data_count(d["heading"], d["name"], e["xschema"])
+          reps = [ pool_count, reps ].max
+        }
+        e["replicates"] = reps if reps > 0
+      end
+    end
+
+
+    # explicit pool values
+    ## 2501 has Result Value [pool] as the only divider
+    if e["replicates"].nil? then
+      special = e["all_data"].find_all { |d| d["heading"] =~ /(Parameter|Result)\s*Values?/i && d["name"] =~ /pool/i }
+      if special.size > 0 then
+        reps = 0
+        special.each { |d|
+          pool_count = r.get_applied_protocol_data_count(d["heading"], d["name"], e["xschema"])
+          reps = [ pool_count, reps ].max
+        }
+        e["replicates"] = reps if reps > 0
+      end
+    end
+
+    # Result File
+    if e["replicates"].nil? then
+      results = e["all_data"].find_all { |d| d["heading"] =~ /Result\s*Files?/i }
+      if results.size > 0 then
+        uniq_heading_and_name = results.uniq_by { |d| [ d["heading"], d["name"] ] }.map { |d| [ d["heading"], d["name"] ] }
+        reps = nil
+        uniq_heading_and_name.each { |hn|
+          count = results.find_all { |d| d["heading"] == hn[0] && d["name"] == hn[1] }.map { |d| d["value"] }.uniq.compact.size
+          reps = reps.nil? ? count : [ reps, count ].min
+        }
+        e["replicates"] = reps if reps > 0
+      end
+    end
+
+    # GEO ID
+    if e["replicates"].nil? then
+      geoids = e["all_data"].find_all { |d| d["name"] =~ /GEO/i }
+      reps = geoids.map { |d| d["value"] }.uniq.compact.size
+      e["replicates"] = reps if reps > 0
+    end
+
+
+    e["replicates"] = "COMPUTATIONAL ANNOTATION" if e["experiment_types"].include?("Computational annotation")
+    e["replicates"] = "SAMPLE CREATION" if e["experiment_types"].find { |t| t =~ /Sample creation/i }
+
+    if (e["replicates"].nil? || e["replicates"] == 0 || e["replicates"] == "MISSING") then
+      puts e["xschema"]
+      puts "  No replicate info!"
+      puts e["experiment_types"].pretty_inspect
+      puts e["all_data"].map { |d| "#{d["heading"]} [#{d["name"]}] = #{d["value"]}" }.pretty_inspect
+      exit
+    end
+  }
+
+
   File.open('breakpoint6.dmp', 'w') { |f| Marshal.dump(exps, f) }
 
 end
-
-# Get replicate count
-exps.each { |e|
-  e["replicates"] = nil
-
-  if e["all_data"].nil? 
-   if e["released_at"] == "" then #|| e["deprecated"] then
-     e["replicates"] = "NOT RELEASED"
-     next
-   else
-     puts e["xschema"]
-     puts "  NO DATA"
-     exit
-   end
-  end
-
-  # *extract*
-  extracts = e["all_data"].find_all { |d| d["heading"] =~ /extract\b/i || d["name"] =~ /extract\b/i }.reject { |d| d["value"] == nil || d["value"].empty? }
-  reps = 0
-  extracts.uniq_by { |d| [ d["heading"], d["name"] ] }.map { |d| [ d["heading"], d["name"] ] }.each { |unq|
-    unq = extracts.find_all { |d| d["heading"] == unq[0] && d["name"] == unq[1] }.map { |d| d["value"].sub(/ (Nucleosomes|Pull-down|Input)/, '').sub(/^(Extract|Control)\d$/, '\1').sub(/(_GEL|_BULK)$/, '') }.uniq.compact.size
-    reps = [reps, unq].max
-  }
-#  reps = extracts.map { |d| d["value"].sub(/ (Nucleosomes|Pull-down|Input)/, '').sub(/^(Extract|Control)\d$/, '\1').sub(/(_GEL|_BULK)$/, '') }.uniq.compact.size
-  e["replicates"] = reps if reps > 0
-
-  # Sample Name
-  samples = Array.new
-  if e["replicates"].nil? then
-    samples = e["all_data"].find_all { |d| d["heading"] =~ /Sample\s*Names?/i }
-    if !samples.find { |s| s["attributes"] } then
-      # Didn't get them earlier
-      samples.each { |s| attrs = r.get_attributes_for_datum(s["data_id"], e["xschema"]); s["attributes"] = attrs }
-    end
-    if samples.find { |s| s["attributes"] && s["attributes"].find { |a| a["name"] =~ /replicate set/ } } then
-      samples = samples.map { |s| s["attributes"].find { |a| a["name"] =~ /replicate set/ } }
-    end
-    reps = samples.map { |d| d["value"].sub(/\d.of.\d_rep/, 'rep').sub(/\d[_-]\d[_-](\d)$/, '\1').sub(/(Input|ChipSeq)_(\d)/i, '\2') }.uniq.compact.size
-    e["replicates"] = reps if reps > 0
-  end
-
-  # Oliver submissions that are really just 1 replicate, prolly
-  if e["project"] == "Oliver" && e["all_data"].find { |d| d["heading"] =~ /Parameter\s*Values?/i && d["name"] =~ /pipeline version/i } then
-    stages = e["all_data"].find_all { |d| d["heading"] =~ /(Parameter|Result)\s*Values?/i && d["name"] =~ /stage/i }
-    if stages.size > 0 then
-      reps = 0
-      stages.each { |d|
-        pool_count = r.get_applied_protocol_data_count(d["heading"], d["name"], e["xschema"])
-        reps = [ pool_count, reps ].max
-      }
-      e["replicates"] = reps if reps > 0
-    end
-  end
-
-
-  # explicit pool values
-  ## 2501 has Result Value [pool] as the only divider
-  if e["replicates"].nil? then
-    special = e["all_data"].find_all { |d| d["heading"] =~ /(Parameter|Result)\s*Values?/i && d["name"] =~ /pool/i }
-    if special.size > 0 then
-      reps = 0
-      special.each { |d|
-        pool_count = r.get_applied_protocol_data_count(d["heading"], d["name"], e["xschema"])
-        reps = [ pool_count, reps ].max
-      }
-      e["replicates"] = reps if reps > 0
-    end
-  end
-
-  # Result File
-  if e["replicates"].nil? then
-    results = e["all_data"].find_all { |d| d["heading"] =~ /Result\s*Files?/i }
-    if results.size > 0 then
-      uniq_heading_and_name = results.uniq_by { |d| [ d["heading"], d["name"] ] }.map { |d| [ d["heading"], d["name"] ] }
-      reps = nil
-      uniq_heading_and_name.each { |hn|
-        count = results.find_all { |d| d["heading"] == hn[0] && d["name"] == hn[1] }.map { |d| d["value"] }.uniq.compact.size
-        reps = reps.nil? ? count : [ reps, count ].min
-      }
-      e["replicates"] = reps if reps > 0
-    end
-  end
-
-  # GEO ID
-  if e["replicates"].nil? then
-    geoids = e["all_data"].find_all { |d| d["name"] =~ /GEO/i }
-    reps = geoids.map { |d| d["value"] }.uniq.compact.size
-    e["replicates"] = reps if reps > 0
-  end
-
-
-  e["replicates"] = "COMPUTATIONAL ANNOTATION" if e["experiment_types"].include?("Computational annotation")
-  e["replicates"] = "SAMPLE CREATION" if e["experiment_types"].find { |t| t =~ /Sample creation/i }
-
-  if (e["replicates"].nil? || e["replicates"] == 0 || e["replicates"] == "MISSING") then
-    puts e["xschema"]
-    puts "  No replicate info!"
-    puts e["experiment_types"].pretty_inspect
-    puts e["all_data"].map { |d| "#{d["heading"]} [#{d["name"]}] = #{d["value"]}" }.pretty_inspect
-    exit
-  end
-}
-
-
 
 
 

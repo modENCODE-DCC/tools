@@ -331,6 +331,30 @@ class ChadoReporter
     return ret
   end
 
+  def get_rnasize(schema)
+    sth = @dbh.prepare("SELECT value FROM #{schema}.experiment_prop WHERE name = 'RNAsize'");
+    sth.execute
+    ret = sth.fetch_array
+    sth.finish
+    if ret.nil?
+      return [] 
+    else
+      return [ ret[0] ]
+    end
+  end
+
+  def get_experimental_designs(schema)
+    sth = @dbh.prepare("SELECT value FROM #{schema}.experiment_prop WHERE name = 'Experimental Design'");
+    sth.execute
+    ret = []
+    sth.fetch_array { |row|
+      ret.push row[0]
+    }
+
+    sth.finish
+    ret
+  end
+
   def get_protocol_types(schema)
     sth = @dbh.prepare("SELECT DISTINCT a.value AS type, p.name, p.description FROM #{schema}.attribute a 
       INNER JOIN #{schema}.protocol_attribute pa ON a.attribute_id = pa.attribute_id

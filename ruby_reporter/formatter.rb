@@ -298,7 +298,7 @@ class Formatter
 
       i = 0
       col_order = [
-        "Description", "Project", "Lab", "Assay", "Data Type",
+        "Description", "Project", "Lab", "Assay", "Data Type", "Validation Dataset",
         "Experimental Factor", "Replicates", "Treatment", "Organism", "Cell Line",
         "Strain", "Tissue", "Stage/Treatment", "Date Data Submitted",
         "Release Date", "Status", "Submission ID", "GEO/SRA IDs", "GFF Files"
@@ -306,7 +306,7 @@ class Formatter
       col_index = Hash.new
       colors = [ "#DDDDFF", "#DDDDDD" ]
 
-      Formatter::format(exps, false, {"Description" => "uniquename", "Replicates" => "replicates", "Growth Condition" => "growth_condition", "DNAse Treatment" => "dnase_treatment", "GFF Files" => "gff", "Array Size" => "array_size", "Array Platform" => "array_platform", "Sequences" => "sequence_count", "Version" => "version", "Reactions" => "reactions", "Features" => "features" }) { |cols|
+      Formatter::format(exps, false, {"Description" => "uniquename", "Replicates" => "replicates", "Growth Condition" => "growth_condition", "DNAse Treatment" => "dnase_treatment", "GFF Files" => "gff", "Array Size" => "array_size", "Array Platform" => "array_platform", "Sequences" => "sequence_count", "Version" => "version", "Reactions" => "reactions", "Features" => "features", "Validation Dataset" => "biological_validation", "RNAsize" => "rna_size" }) { |cols|
         if header then
           cols.each_index { |idx| col_index[cols[idx]] = idx }
           f.puts col_order.join("\t")
@@ -336,6 +336,7 @@ class Formatter
               factors.push "Version=#{cols[col_index["Version"]]}" if cols[col_index["Version"]] && cols[col_index["Version"]].to_i > 1
               factors.push "Reactions=#{cols[col_index["Reactions"]]}" if cols[col_index["Reactions"]] && cols[col_index["Reactions"]].to_i > 1
               factors.push "Features=#{cols[col_index["Features"]]}" if cols[col_index["Features"]] && cols[col_index["Features"]].to_i > 1
+              factors.push "RNAsize=#{cols[col_index["RNAsize"]].join(",")}" if cols[col_index["RNAsize"]] && cols[col_index["RNAsize"]].length > 0
               line.push factors.map { |s| s.gsub(/, /, ",") }.join(";")
             elsif k == "Replicates" then
               line.push cols[col_index["Replicates"]]
