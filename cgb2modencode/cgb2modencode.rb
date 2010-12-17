@@ -1,4 +1,7 @@
 #!/usr/bin/ruby
+
+$:.unshift(File.dirname(__FILE__))
+
 require 'mediawiki_bot'
 require 'modencode_template'
 require 'atlassianwiki_bot'
@@ -10,11 +13,11 @@ DEFAULT_INI_FILE="cgb-wiki-bot.yml"
 DEFAULT_CACHE_FILE="cgb.cache"
 DEFAULT_CACHE_AGE=86400
 
-ini_file = ARGV[0] || DEFAULT_INI_FILE
+ini_file = ARGV[0] || File.join(File.dirname(__FILE__), DEFAULT_INI_FILE)
 @config = File.open(ini_file) { |f| YAML.load(f) }
 
 # Clean up the cache file if it's too old
-cache_file = @config["cache_file"] || DEFAULT_CACHE_FILE
+cache_file = @config["cache_file"] || File.join(File.dirname(__FILE__), DEFAULT_CACHE_FILE)
 if (File.exists?(cache_file)) then
   cache_age = Time.now - File.mtime(cache_file)
   max_cache_age = @config["max_cache_age"] || DEFAULT_CACHE_AGE
