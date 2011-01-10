@@ -1,0 +1,39 @@
+For loading submissions with GFF files that are too big/complex to otherwise handle, a la #2934
+(Waterston's aggregrated transcripts: "RNAseq - 1003 aggregate 19 stages - integrated transcripts"):
+
+1. Make "small" versions of the GFF files in the original submission that only have a dozen or so
+features.
+
+2. Run the validator to genereate a ChadoXML file using the small GFF files.
+
+3. Edit goscript.pl:
+   Change the name of the input XML.
+   Change the submission name.
+   Change the list of GFF files to reflect the GFFs referenced in the SDRF.
+
+4. Copy all of the original (full-size) GFFs into a subdirectory called group_gff/
+
+5. Run goscript.pl
+
+6. Edit combine_xmls.sh and change the project ID from 2934 to whatever's appropriate.
+
+7. Run combine_xmls.sh
+
+8. Edit fix_cvterms.pl and change the project ID as appropriate. Also comment out the "Hardcoded
+missing terms" section.
+
+9. Run fix_cvterms.pl; you will likely get a "Bad term: <cvterm>" message. Updated/uncomment the
+"Hardcoded missing terms" section as appropriate. Note that the existing entries use <db> and <cv>
+entries that refer to <db> and <cv> elements in the "small" ChadoXML.
+
+10. You should now have a NNNN.xml file that is a full ChadoXML file. Copy it to the project's
+extracted directory in the pipeline. Set the status of the project to "validated" and click Load.
+The load will likely fail. Using the appropriate command ID and project ID, update the Command
+object like so:
+
+cmd = Command.find(27320)
+cmd.command = "perl%20-I%20/var/www/submit/script/loaders/modencode%20/var/www/submit/script/loaders/modencode/stag-wrapper.pl -noupdate=cv,db,dbxref,cvterm,feature /modencode/raw/data/2934/extracted"
+cmd.save
+cmd.controller.queue(:defer => true)
+
+11. Go to the pipeline administration page, and tickle a free machine.
