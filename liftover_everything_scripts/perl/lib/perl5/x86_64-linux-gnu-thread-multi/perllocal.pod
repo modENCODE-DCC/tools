@@ -1,0 +1,22 @@
+=head2 Tue Feb  8 19:27:05 2011: C<Module> L<Compress::Raw::Bzip2|Compress::Raw::Bzip2>
+
+=over 4
+
+=item *
+
+C<installed into: /home/yostinso/liftover/perl//lib/perl5>
+
+=item *
+
+C<LINKTYPE: dynamic>
+
+=item *
+
+C<VERSION: 2.033>
+
+=item *
+
+C<EXE_FILES: >
+
+=back
+
