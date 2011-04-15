@@ -65,14 +65,18 @@ while (<>) {
 	  }
 	  $cigar =~ s/D/N/;  #assuming introns rather than deletions
 	  $s[5] = $cigar;
+      } elsif ($a =~ /seq/) { #add sequence, if present
+          $a =~ s/seq=//;
+          $s[9] = $a;
+        } else {
+          $s[9] = '*';
       }
   }
   
   $s[6] = '*';
   $s[7] = 0;
   $s[8] = 0;
-  #sequence
-  $s[9] = '*';
+  
   #quality
   $s[10] = '*';
   # number of mismatches
