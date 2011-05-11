@@ -159,6 +159,7 @@ foreach my $gff_file (@ARGV) {
 
         # Extra attributes
         foreach my $att (@attributes) {
+          chomp($att);
           my ($aname, $aval) = split(/=/, $att);
           if ($aname =~ /Gap/) {
             # Use Gap for cigar
