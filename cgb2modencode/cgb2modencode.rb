@@ -42,7 +42,9 @@ if !File.exists?(cache_file) then
   abs.map! { |ab| h = Hash[*header.zip(ab).flatten] }
 
   abs.map! { |ab|
-    rna_id = ab["RNA ID"].match(/\*(\d+)\*/)[1]
+    rna_id = ab["RNA ID"].match(/\*\}(\d+)\*/)[1] # ID looks like: "{anchor:170}{*}170*"
+    # Old version -- no longer works
+    #rna_id = ab["RNA ID"].match(/\*(\d+)\*/)[1]
     bs_id = ab["Biological sample ID"].match(/\d+/)[0]
     cell_type = ab["sample"].gsub(/^\W+|\|.*/, '').gsub(/\\\+/, '+')
     qc_pages = ab["RNA QC"].split(/\s*,\s*/).map { |qc| qc.gsub(/^\[|\]$/, '').gsub(/\\\+/, '+').split(/\|/) } if ab["RNA QC"]
