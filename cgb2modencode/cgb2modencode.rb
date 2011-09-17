@@ -12,6 +12,7 @@ require 'yaml'
 DEFAULT_INI_FILE="cgb-wiki-bot.yml"
 DEFAULT_CACHE_FILE="cgb.cache"
 DEFAULT_CACHE_AGE=86400
+NEVER_USE_CACHE="true"
 
 ini_file = ARGV[0] || File.join(File.dirname(__FILE__), DEFAULT_INI_FILE)
 @config = File.open(ini_file) { |f| YAML.load(f) }
@@ -21,10 +22,12 @@ cache_file = @config["cache_file"] || File.join(File.dirname(__FILE__), DEFAULT_
 if (File.exists?(cache_file)) then
   cache_age = Time.now - File.mtime(cache_file)
   max_cache_age = @config["max_cache_age"] || DEFAULT_CACHE_AGE
-  File.unlink(cache_file) if cache_age >= max_cache_age
+  File.unlink(cache_file) if (cache_age >= max_cache_age) || NEVER_USE_CACHE
 end
 
 cgbb = nil
+cgbb_counter = 0 #use this counter to keep track of how long we're connected; periodically logout/log back in
+
 if !File.exists?(cache_file) then
   # Open CGB connection
   cgbb = AtlassianwikiBot.new(@config["cgb_wiki"]["uri"])
@@ -42,7 +45,7 @@ if !File.exists?(cache_file) then
   abs.map! { |ab| h = Hash[*header.zip(ab).flatten] }
 
   abs.map! { |ab|
-    rna_id = ab["RNA ID"].match(/\*\}(\d+)\*/)[1] # ID looks like: "{anchor:170}{*}170*"
+    rna_id = ab["RNA ID"].match(/\*\}?(\d+)\*/)[1] # ID looks like: "{anchor:170}{*}170*" or "{anchor:170} *170*"
     # Old version -- no longer works
     #rna_id = ab["RNA ID"].match(/\*(\d+)\*/)[1]
     bs_id = ab["Biological sample ID"].match(/\d+/)[0]
@@ -57,7 +60,7 @@ if !File.exists?(cache_file) then
 else
   abs = File.open(cache_file) { |f| Marshal.restore(f) }
 end
-
+abs.compact!
 
 # Open modENCODE wiki connection
 me = MediawikiBot.new(@config["modencode_wiki"]["uri"])
@@ -65,9 +68,16 @@ me = MediawikiBot.new(@config["modencode_wiki"]["uri"])
 dbf = DbfieldsBot.new(@config["dbfields"]["uri"])
 
 # Verify wiki synchronization
-abs.each { |ab|
+#for testing use the following line, instead of looping
+#ab = abs.find{|x| x[:rna_id] == "634"}
+#or use the following three lines to test a subset
+#ids = (630..635).to_a
+#test_abs = ids.map{|id| abs.find{|x| x[:rna_id] == id.to_s}}
+#test_abs.compact.each { |ab|
+abs.compact.each { |ab|
   puts "Checking sample #{ab[:rna_id]} for up-to-dateness."
-
+  cgbb_counter += 1
+  puts "counter: #{cgbb_counter}"
   # Build template page from existing page, if any
   # Also fetch DBFields form content, if any
   title = "Celniker/RNA:#{ab[:rna_id]}"
@@ -117,7 +127,7 @@ abs.each { |ab|
   cgb_qc_images = ab[:qc_pages].to_a.map { |p| p[1] }.sort
   me_qc_images = me_page.qcdata.split(/\n+/).map { |q| p = q.gsub(/^\*\[\[|\]\]$/, '').split(/\|/)[1] }.sort unless me_page.qcdata.nil?
   # If the link text is correct, then just go ahead and assume the image files are correct
-  cgb_page.qcdata = me_page.qcdata if (me_qc_images == cgb_qc_images && @config["lazy_qc_checks"])
+  cgb_page.qcdata = me_page.qcdata if ((me_qc_images == cgb_qc_images) && @config["lazy_qc_checks"])
 
   # Check the templates against each other
   if ( cgb_page.scraped_data == me_page.scraped_data && cgb_page.protocols == me_page.protocols &&
@@ -133,14 +143,27 @@ abs.each { |ab|
       cgbb ||= AtlassianwikiBot.new(@config["cgb_wiki"]["uri"]) # Login if not already logged in
       cgb_page.qcdata = ab[:qc_pages].to_a.map { |p|
         begin
-          html = cgbb.get_page(p[1].gsub(/\s/, '+')).body
-          wiki = cgbb.get_page_text_for_content(html)
+          html = cgbb.get_page(p[1].gsub(/\s/, '+'))
+          puts "    Fetching #{p[1].gsub(/\s/, '+')}.  Returned #{html.code}: #{html.message}"
+          wiki = cgbb.get_page_text_for_content(html.body)
           m = wiki.match(/!([^!]*)!/)
+        rescue ArgumentError
+          puts "ERROR: #{$!}"
+          #re-loginn
+          begin
+            puts "re-logging in"
+            cgbb = AtlassianwikiBot.new(@config["cgb_wiki"]["uri"]) # Login if not already logged in
+            retry
+          rescue
+            puts "ERROR: #{$!}"
+          end 
         rescue
-          puts "    Failed to fetch page for #{p[1]}; thought there would be QC data here."
+          puts "    Failed to fetch cgbb page for #{p[1]}; thought there would be QC data here."
+          puts "    ERROR: #{$!}"
+          #puts "    page content was:****************\n#{html}\n*******************\n"
         end
         img_name = m[1] unless m.nil?
-        u = html.match(/src="([^"]*#{Regexp.escape(img_name.gsub(/\s/, '+'))}[^"]*)"/) unless img_name.nil?
+        u = html.body.match(/src="([^"]*#{Regexp.escape(img_name.gsub(/\s/, '+'))}[^"]*)"/i) unless img_name.nil?
         src = u[1] unless u.nil?
         if src then
           res_file = nil
@@ -152,6 +175,7 @@ abs.each { |ab|
             # Upload image
             f.rewind
             res_file = me.upload_image(img_name, f)
+            puts "    Fetched image #{img_name} from cgbb page #{p[1]}."
           }
           raise RuntimeException.new("Unable to upload file; nil response object from wiki") if res_file.nil?
           "[[Image:#{res_file}|#{p[1]}]]"
@@ -177,5 +201,20 @@ abs.each { |ab|
     # Update form content
     res = dbf.update(me, title, cgb_form)
   end
-}
+  puts "  Taking a breather."
+  sleep(2)
 
+  #properly logout every 50
+  if (cgbb_counter % 50 == 0) then
+    cgbb.logout(@config["cgb_wiki"]["uri"])
+    puts "logged out" if !cgbb.logged_in?
+    cgbb = AtlassianwikiBot.new(@config["cgb_wiki"]["uri"]) # Login again
+  end
+
+} #comment if testing a single page
+  puts "Logging out of CGB wiki"
+  begin
+    cgbb.logout(@config["cgb_wiki"]["uri"])
+  rescue
+    puts "ERROR logging out: #{$!}"
+  end

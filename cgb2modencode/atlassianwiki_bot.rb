@@ -6,18 +6,51 @@ require 'cookie_jar'
 
 class AtlassianwikiBot
   LOGIN_PAGE = "/login.action"
+  LOGOUT_PAGE = "/logout.action"
   def initialize(uri, username = nil, password = nil)
     @conn_info = URI.parse(uri)
     @conn_info = URI.parse("http://#{uri}") if @conn_info.host.nil?
     @conn_info.user = username unless username.nil?
     @conn_info.password = password unless password.nil?
     @user_cookie = CookieJar.new
-
+#    puts "cookie before login: #{@user_cookie["crowd.token_key"]}"
     login()
+    puts "cookie after login: #{@user_cookie["crowd.token_key"]}"
   end
+
   def logged_in?
-    return @user_cookie["crowd.token_key"] && @user_cookie["crowd.token_key"] != "null"
+#   puts "cookie during login-check: #{@user_cookie.inspect()}"
+   status = (@user_cookie["crowd.token_key"] && (@user_cookie["crowd.token_key"] != "") && (@user_cookie["crowd.token_key"] != "\"\""))
+#   puts "logged in status: #{status}"
+   return status
   end
+
+  def logout(uri, allowed_redirs = 5)
+    raise ArgumentError.new("HTTP redirection to deep on login") if allowed_redirs == 0
+    logout_uri = (URI.parse(uri).merge(LOGOUT_PAGE)).clone
+#    puts "logging out at #{logout_uri.path}"
+    logout_uri.user = @conn_info.user unless @conn_info.nil?
+    logout_uri.password = @conn_info.password unless @conn_info.nil?
+    logout_uri.user = logout_uri.password = nil
+
+    req = Net::HTTP::Post.new(logout_uri.path)
+    http = Net::HTTP.new(logout_uri.host, logout_uri.port)
+    http.use_ssl = true if logout_uri.scheme == "https"
+    res = http.start { |http| http.request(req) }
+    case res
+    when Net::HTTPRedirection, Net::HTTPSuccess then
+      # OK
+      puts "logout OK"
+      @user_cookie["crowd.token_key"] = "";      
+      #@user_cookie.update(res["Set-Cookie"]) if res["Set-Cookie"]
+#      puts "checking status after logout #{logged_in?()}"
+      res
+    else
+      res.error!
+    end
+  end
+
+
   def get_page_text(title)
     r = get_page(title)
     m = r.body.match(/id="editPageLink"[^>]*href="([^"]*)"/)
@@ -30,10 +63,10 @@ class AtlassianwikiBot
 
   def get_page_text_for_content(body)
     m = body.match(/id="editPageLink"[^>]*href="([^"]*)"/)
-    raise RuntimeError.new("Couldn't find edit page link for #{title}") unless m
+    raise RuntimeError.new("Couldn't find edit page link in body") unless m
     r = get_page(m[1])
     m = r.body.match(/<textarea[^>]*name="content"[^>]*>([^<]*)</m) 
-    raise RuntimeError.new("Couldn't find content on edit page for #{title}") unless m
+    raise RuntimeError.new("Couldn't find content on edit page in body") unless m
     content = CGI::unescapeHTML(m[1])
   end
 
@@ -65,6 +98,7 @@ class AtlassianwikiBot
       res.error!
     end
   end
+
   def login(uri = nil, allowed_redirs = 5)
     raise ArgumentError.new("HTTP redirection to deep on login") if allowed_redirs == 0
     login_uri = (uri || @conn_info.merge(LOGIN_PAGE)).clone
@@ -97,6 +131,7 @@ class AtlassianwikiBot
       res
     when Net::HTTPSuccess then
       @user_cookie.update(res["Set-Cookie"]) if res["Set-Cookie"]
+      puts "logged in to CGB-Wiki"
       res
     else
       res.error!
