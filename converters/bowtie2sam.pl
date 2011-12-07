@@ -221,11 +221,11 @@ sub bowtie2sam_paired {
 
   # initial flag (will be updated later)
   $s1->[1] = $s2->[1] = 0;
-  $s1->[1] = $s2->[1] = 0x01;  #read is paired
-
+  $s1->[1] += $s2->[1] = 0x01;  #read is paired
+  
   # read name
-  $s1->[1] = ($t1[0] =~ /\/1$/) ? 0x40 : 0x80;
-  $s2->[1] = ($t2[0] =~ /\/1$/) ? 0x40 : 0x80 if ($line2 ne "");
+  $s1->[1] += ($t1[0] =~ /\/1$/) ? 0x40 : 0x80;
+  $s2->[1] += ($t2[0] =~ /\/1$/) ? 0x40 : 0x80 if ($line2 ne "");
   #$s1->[1] = 0x40 if ($t1[0] =~ /\/1$/);
   #$s2->[1] = 0x80 if ($s2->[0] =~ /\/2$/);
   $ret1 = $t1[0];
@@ -256,8 +256,11 @@ sub bowtie2sam_paired {
       $s2->[1] += 0x10 if ($t2[1] eq '-'); 
       if ((split(/\/[12]$/,$ret1))[0] =~ (split(/\/[12]$/,$ret2))[0]) {
 	  # there's mates!
-	  
-	  # mate coordinate
+	  $s1->[1] += 0x02;
+          $s2->[1] += 0x02;
+          #print STDERR "mates found";
+
+          # mate coordinate
 	  $s1->[1] += 0x20 if ($t2[1] eq '-');  #strand of mate
 	  $s2->[1] += 0x20 if ($t1[1] eq '-');  #strand of mate
 	  
@@ -304,7 +307,7 @@ sub bowtie2sam_paired {
 	  $nm2 = &some_processing(\@t2,\@$s2);  #only print the mate if paired
       } else {
 	  #for unpaired
-	  #print "UNPAIRED! at $line_count\n";
+          #print STDERR "UNPAIRED!";
 	  $s1->[6] = $s2->[6] = '*'; 
 	  $s1->[7] = $s1->[8] = $s2->[7] = $s2->[8] = 0;
 	  $s1->[1] += 0x08;
