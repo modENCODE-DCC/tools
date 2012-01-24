@@ -23,7 +23,7 @@ cache_file = @config["cache_file"] || File.join(File.dirname(__FILE__), DEFAULT_
 if (File.exists?(cache_file)) then
   cache_age = Time.now - File.mtime(cache_file)
   max_cache_age = @config["max_cache_age"] || DEFAULT_CACHE_AGE
-  #File.unlink(cache_file) if (cache_age >= max_cache_age) || NEVER_USE_CACHE
+  File.unlink(cache_file) if (cache_age >= max_cache_age) || NEVER_USE_CACHE
 end
 
 cgbb = nil
