@@ -1,8 +1,12 @@
 #!/usr/bin/ruby
 
+$:.unshift(File.dirname(__FILE__))
+
 require 'rubygems'
 require 'cgi'
-if File.exists?('dbi_patch.rb') then
+require 'yaml'
+patch_file = File.join(File.dirname(__FILE__), "dbi_patch.rb")
+if File.exists?(patch_file) then
   require 'dbi_patch.rb'
 else
   require 'dbi'
@@ -15,10 +19,26 @@ require 'chado_reporter'
 require 'geo'
 require 'escape'
 
+DBI::DBD::Pg::Database::type_map_dir = File.dirname(__FILE__)
+
 module Enumerable
   def uniq_by
     h = {}; inject([]) { |a,x| h[yield(x)] ||= a << x }
   end
+end
+
+def pipeline_database
+    if File.exists? "/var/www/submit/config/database.yml" then
+      db_def = open("/var/www/submit/config/database.yml") { |f| YAML.load(f.read) }["development"]
+      dbinfo = Hash.new
+     # dsn = "DBI:Pg:modencode_chado:modencode-db.oicr.on.ca
+      dbinfo[:dsn] = "dbi:Pg:dbname=#{db_def['database']};host=#{db_def['host']};port=5432"
+      dbinfo[:user] = db_def['username']
+      dbinfo[:password] = db_def['password']
+      return dbinfo
+    else
+      raise Exception.new("You need a database.yml file in your config/ directory with at least a Ruby DBI dsn.")
+    end
 end
 
 def is_histone_antibody(antibody)
@@ -52,7 +72,9 @@ end
 r = ChadoReporter.new
 r.set_schema("reporting")
 
-dbh = DBI.connect("dbi:Pg:dbname=pipeline_dev;host=modencode-db1;port=5432", "db_public", "ir84#4nm")
+dbinfo = pipeline_database
+#dbh = DBI.connect("dbi:Pg:dbname=pipeline_dev;host=modencode-db1;port=5432", "db_public", "ir84#4nm")
+dbh = DBI.connect(dbinfo[:dsn], dbinfo[:user], dbinfo[:password]) 
 if (File.exists?('breakpoint6.dmp')) then
   exps = Marshal.load(File.read('breakpoint6.dmp'))
 else
@@ -96,7 +118,7 @@ else
             }
             
             # Save the list of experiments so we can run this script again without regenerating it
-            File.open('breakpoint1.dmp', 'w') { |f| Marshal.dump(exps, f) }
+#            File.open('breakpoint1.dmp', 'w') { |f| Marshal.dump(exps, f) }
           end
 
           # Get all of the feature types for each experiment, and from them
@@ -174,7 +196,7 @@ else
 
           # Save a breakpoint here so if something after specimen collection crashes
           # we don't have to query them all from the database again.
-          File.open('breakpoint2.dmp', 'w') { |f| Marshal.dump(exps, f) }
+#          File.open('breakpoint2.dmp', 'w') { |f| Marshal.dump(exps, f) }
         end
 
         # Get the Project and Lab for each experiment
@@ -188,7 +210,7 @@ else
           end
         }
         # Save a breakpoint so we don't have to get the experiment and lab again
-        File.open('breakpoint3.dmp', 'w') { |f| Marshal.dump(exps, f) }
+#        File.open('breakpoint3.dmp', 'w') { |f| Marshal.dump(exps, f) }
       end
 
       # Get all of the protocol types associated with each experiment
@@ -199,7 +221,7 @@ else
         e["protocol_types"] = r.get_protocol_types(e["xschema"])
       }
       # Save a breakpoint so we don't have to get the protocol types again
-      File.open('breakpoint4.dmp', 'w') { |f| Marshal.dump(exps, f) }
+#      File.open('breakpoint4.dmp', 'w') { |f| Marshal.dump(exps, f) }
     end
 
     # For all of the specimens that refer to a specimen from an old project, pull
@@ -1005,7 +1027,7 @@ else
     puts "#{exps.size} total projects"
     #exps.delete_if { |e| (e["status"] != "released" && e["status"] != "approved by user") || e["deprecated"] }
     #puts "#{exps.size} released projects"
-    File.open('breakpoint5.dmp', 'w') { |f| Marshal.dump(exps, f) }
+#    File.open('breakpoint5.dmp', 'w') { |f| Marshal.dump(exps, f) }
   end
 
   # Get GFF files associated with each experiment
@@ -1198,7 +1220,9 @@ exps.each { |e|
      else
        puts e["xschema"]
        puts "  NO DATA"
-       exit
+       # Before, this would exit quietly. Now, we allow it to continue. Not sure if it will break things downstream.
+       e["replicates"] = "NO DATA" # TODO FIXME is this the best course of action?
+	# exit # Don't just exit! You will lose all your work! Not sure what the reasoning behind this was.
      end
     end
 
@@ -1282,15 +1306,19 @@ exps.each { |e|
 
     if (e["replicates"].nil? || e["replicates"] == 0 || e["replicates"] == "MISSING") then
       puts e["xschema"]
-      puts "  No replicate info!"
+      puts "  No replicate info! Continuing..."
       puts e["experiment_types"].pretty_inspect
       puts e["all_data"].map { |d| "#{d["heading"]} [#{d["name"]}] = #{d["value"]}" }.pretty_inspect
-      exit
+      # Again, don't just exit -- set the replicates to a fake value and carry on
+      e["replicates"] = "NO REPLICATES FOUND" # TODO FIXME is this the best course of action?
+      # exit
     end
   }
 
 
-  File.open('breakpoint6.dmp', 'w') { |f| Marshal.dump(exps, f) }
+#  File.open('breakpoint6.dmp', 'w') { |f| Marshal.dump(exps, f) }
+
+puts "Done."
 
 end
 
@@ -1309,5 +1337,6 @@ elsif ARGV[0] && ARGV[0].length > 0 then
   $stderr.puts "    ./make_report.rb [" + Formatter.methods.find_all { |m| m =~ /^format_/ }.map { |m| m.match(/^format_(.*)/)[1] }.join(", ") + "] [outputfile]"
 else
   Formatter::format_html(exps, ARGV[1])
+  puts "make_report finished!"
 end
 

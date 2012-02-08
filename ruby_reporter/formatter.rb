@@ -65,7 +65,7 @@ class Formatter
       geo_ids = [e["GSE"]]
       geo_ids += e["GSM"] unless e["GSM"].nil?
       geo_ids += e["sra_ids"] unless e["sra_ids"].nil?
-      cols.push geo_ids.compact.sort.join(", ")
+      cols.push geo_ids.compact.uniq.reject { |id| id.empty? }.sort.join(", ")
       extra_cols.values.each { |colname| cols.push e[colname] }
 
       if block_given? then

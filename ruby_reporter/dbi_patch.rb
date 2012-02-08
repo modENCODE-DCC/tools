@@ -1,14 +1,28 @@
+require 'rubygems'
 require 'dbi'
 require 'dbd/Pg'
 class DBI::DBD::Pg::Database
+    def self.type_map_num
+      @type_map_num ||= 0
+      @type_map_num += 1
+    end
+    def self.type_map_dir=(new_dir)
+      @type_map_dir = new_dir
+    end
+    def self.type_map_dir
+      @type_map_dir
+    end
     def load_type_map
-        if File.exists?("type_map.marshal") then
-          puts "DBI_PATCH::Loading type map"
-          @type_map = Marshal.restore(File.read("type_map.marshal"))
+        @type_map_counter ||= DBI::DBD::Pg::Database::type_map_num
+        filename = "type_map_#{@type_map_counter}.marshal"
+        filename = File.join(DBI::DBD::Pg::Database::type_map_dir, filename) if DBI::DBD::Pg::Database::type_map_dir
+        if File.exists?(filename) then
+          puts "DBI_PATCH::Loading type map #{@type_map_counter}"
+          @type_map = Marshal.restore(File.read(filename))
           puts "DBI_PATCH::Done."
           return
         else
-          puts "DBI_PATCH::Reading type map from DB"
+          puts "DBI_PATCH::Reading type map from DB #{@type_map_counter}"
         end
         @type_map = Hash.new
 
@@ -62,7 +76,7 @@ class DBI::DBD::Pg::Database
             end
         end
         @type_map.merge!(need_to_add_composites)
-        File.new("type_map.marshal", "w").puts(Marshal.dump(@type_map))
+        File.new(filename, "w").puts(Marshal.dump(@type_map))
         puts "Created new type map"
     end
 end

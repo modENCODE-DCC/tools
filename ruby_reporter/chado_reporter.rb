@@ -1,4 +1,5 @@
 require 'rubygems'
+require 'yaml'
 if File.exists?('dbi_patch.rb') then
   require 'dbi_patch.rb'
 else
@@ -8,8 +9,25 @@ end
 require 'pp'
 
 class ChadoReporter
+
+  def chado_database
+    if File.exists? "/var/www/submit/config/idf2chadoxml_database.yml" then
+      db_definition = open("/var/www/submit/config/idf2chadoxml_database.yml") { |f| YAML.load(f.read) }
+      dbinfo = Hash.new
+      dbinfo[:dsn] = db_definition['ruby_dsn']
+      dbinfo[:user] = db_definition['user']
+      dbinfo[:password] = db_definition['password']
+      return dbinfo
+    else
+      raise Exception.new("You need an idf2chadoxml_database.yml file in your config/ directory with at least a Ruby DBI dsn.")
+    end
+  end
+
   def initialize
-    @dbh = DBI.connect("dbi:Pg:dbname=modencode_chado;host=modencode-db1;port=5432", "db_public", "ir84#4nm") unless @dbh
+    # Connect to whatever chado database the pipeline is speaking to
+    dbinfo = self.chado_database
+    @dbh = DBI.connect(dbinfo[:dsn], dbinfo[:user], dbinfo[:password])
+    # @dbh = DBI.connect("dbi:Pg:dbname=modencode_chado;host=modencode-db1;port=5432", "db_public", "ir84#4nm") unless @dbh
   end
   def dbh
     @dbh
