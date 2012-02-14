@@ -661,6 +661,19 @@ class ChadoReporter
     return filtered_compounds
   end
 
+  # get any temperatures attached to this experiment.  should probably also get the attached unit (deg C or deg F)
+  def collect_temps(data, xschema)
+    filtered_temps = Array.new
+    temps = data.find_all { |d| d["type"] =~ /MO:Temperature/i }
+    temps.each { |d| 
+      attrs = self.get_attributes_for_datum(d["data_id"], xschema)
+      d["attributes"] = attrs
+      filtered_antibodies.push d
+      }
+    filtered_temps = filtered_temps.uniq_by { |d| d["attributes"].nil? ? nil : d["attributes"] }
+    return filtered_temps
+  end
+
   # Get any microarrays attached to this experiment; requires the correct type
   # (modencode:ADF) and for it to be from a wiki page with an "official name"
   # field
@@ -691,11 +704,58 @@ class ChadoReporter
     return gffs
   end
 
+  def collect_wig(schema)
+      sth = @dbh.prepare("
+                          SELECT d.value FROM #{schema}.data d
+                          INNER JOIN #{schema}.cvterm cvt ON d.type_id = cvt.cvterm_id
+                          WHERE cvt.name = 'WIG'
+                          OR cvt.name = 'Browser_Extensible_Data_Format 6 (BED6+3)'
+                          OR cvt.name = 'Browser_Extensible_Data_Format (BED)'
+                          OR cvt.name = 'Signal_Graph_File'
+                          GROUP BY d.value
+                       ")
+      sth.execute
+      wigs = sth.fetch_all.flatten
+      sth.finish
+      return wigs
+  end
+
+  def collect_raw_array(schema)
+      sth = @dbh.prepare("
+                         SELECT d.value FROM #{schema}.data d
+                         INNER JOIN #{schema}.cvterm cvt ON d.type_id = cvt.cvterm_id
+                         WHERE cvt.name = 'CEL'
+                         OR cvt.name = 'agilent_raw_microarray_data_file (TXT)'
+                         OR cvt.name = 'nimblegen_microarray_data_file (pair)'
+                         GROUP BY d.value
+                         ")
+      sth.execute                        
+      raws = sth.fetch_all.flatten
+      sth.finish                                                                                                            
+      return raws
+  end
+
+  def collect_raw_seq(schema)
+      sth = @dbh.prepare("
+                          SELECT d.value FROM #{schema}.data d
+                          INNER JOIN #{schema}.cvterm cvt ON d.type_id = cvt.cvterm_id
+                          WHERE cvt.name = 'FASTQ'
+                          OR cvt.name = 'SFF'
+                          OR cvt.name = 'CSFASTA'
+                          GROUP BY d.value
+                         ")
+      sth.execute                        
+      raws = sth.fetch_all.flatten
+      sth.finish
+      return raws    
+  end
+
   def collect_sam(schema)
     sth = @dbh.prepare("
                        SELECT d.value FROM #{schema}.data d
                        INNER JOIN #{schema}.cvterm cvt ON d.type_id = cvt.cvterm_id
-                       WHERE cvt.name = 'Sequence_Alignment/Map (SAM)'
+                       WHERE cvt.name = 'Sequence_Alignment/Map (SAM)' 
+		       OR cvt.name = 'Binary Sequence_Alignment/Map (BAM)'
                        GROUP BY d.value
                        ")
     sth.execute
@@ -703,6 +763,7 @@ class ChadoReporter
     sth.finish
     return sams
   end
+
 
   def recursively_find_referenced_specimens(curschema, specimens, all_specimens = Hash.new { |h,k| h[k] = Array.new } )
     referenced_specimens = specimens.find_all { |sp| sp["attributes"] && sp["attributes"].find { |attr| attr["type"] == "modencode:reference" } }

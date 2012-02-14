@@ -27,6 +27,7 @@ module Enumerable
   end
 end
 
+
 def pipeline_database
     if File.exists? "/var/www/submit/config/database.yml" then
       db_def = open("/var/www/submit/config/database.yml") { |f| YAML.load(f.read) }["development"]
@@ -68,30 +69,48 @@ def is_histone_antibody(antibody)
   return false
 end
 
+def load_breakpoint(which_breakpoint)
+  breakpoint_file = "breakpoint#{which_breakpoint}.dmp"
+  puts "loading #{breakpoint_file}"
+  exps = Marshal.load(File.read(breakpoint_file))
+  puts "Done."
+  return exps
+end
 
+MAKE_BREAKPOINTS = false #a simple flag to trigger making breakpoints
 r = ChadoReporter.new
 r.set_schema("reporting")
 
 dbinfo = pipeline_database
 #dbh = DBI.connect("dbi:Pg:dbname=pipeline_dev;host=modencode-db1;port=5432", "db_public", "ir84#4nm")
 dbh = DBI.connect(dbinfo[:dsn], dbinfo[:user], dbinfo[:password]) 
+if (File.exists?('breakpoint7.dmp')) then
+  exps = load_breakpoint(7)
+  #exps = Marshal.load(File.read('breakpoint7.dmp'))
+else
 if (File.exists?('breakpoint6.dmp')) then
-  exps = Marshal.load(File.read('breakpoint6.dmp'))
+  exps = load_breakpoint(6)
+  #exps = Marshal.load(File.read('breakpoint6.dmp'))
 else
   if (File.exists?('breakpoint5.dmp')) then
-    exps = Marshal.load(File.read('breakpoint5.dmp'))
+    exps = load_breakpoint(5)
+    #exps = Marshal.load(File.read('breakpoint5.dmp'))
   else
     if (File.exists?('breakpoint4.dmp')) then
-      exps = Marshal.load(File.read('breakpoint4.dmp'))
+      exps = load_breakpoint(4)
+      #exps = Marshal.load(File.read('breakpoint4.dmp'))
     else
       if (File.exists?('breakpoint3.dmp')) then
-        exps = Marshal.load(File.read('breakpoint3.dmp'))
+        exps = load_breakpoint(3)
+        #exps = Marshal.load(File.read('breakpoint3.dmp'))
       else
         if (File.exists?('breakpoint2.dmp')) then
-          exps = Marshal.load(File.read('breakpoint2.dmp'))
+          exps = load_breakpoint(2)
+          #exps = Marshal.load(File.read('breakpoint2.dmp'))
         else
           if (File.exists?('breakpoint1.dmp')) then
-            exps = Marshal.load(File.read('breakpoint1.dmp'))
+            exps = load_breakpoint(1)
+            #exps = Marshal.load(File.read('breakpoint1.dmp'))
           else
             # Get a list of all the experiments (and their properties)
             exps = r.get_basic_experiments
@@ -118,7 +137,7 @@ else
             }
             
             # Save the list of experiments so we can run this script again without regenerating it
-#            File.open('breakpoint1.dmp', 'w') { |f| Marshal.dump(exps, f) }
+            File.open('breakpoint1.dmp', 'w') { |f| Marshal.dump(exps, f) } if MAKE_BREAKPOINTS
           end
 
           # Get all of the feature types for each experiment, and from them
@@ -155,9 +174,10 @@ else
             data = data.uniq_by { |d| [ d["heading"], d["name"], d["value"] ] }
             e["all_data"] = data
 
-            # Are there any BAM files? If so, add "alignments" to the types
+            # Are there any SAM/BAM files? If so, add "alignments" to the types
             # of data in this experiment
             bam_files = data.find_all { |d| d["type"] =~ /modencode:Sequence_Alignment\/Map \(SAM\)/ }
+            bam_files += data.find_all { |d| d["type"] =~ /modencode:Binary Sequence_Alignment\/Map \(BAM\)/ }
             if bam_files.size > 0 then
               e["types"] += [ "alignments" ]
             end
@@ -191,12 +211,13 @@ else
 
             e["compound"] = r.collect_compounds(data, e["xschema"])
 
+            e["temp"] = r.collect_temps(data, e["xschema"])
           }
           print "\n"
 
           # Save a breakpoint here so if something after specimen collection crashes
           # we don't have to query them all from the database again.
-#          File.open('breakpoint2.dmp', 'w') { |f| Marshal.dump(exps, f) }
+          File.open('breakpoint2.dmp', 'w') { |f| Marshal.dump(exps, f) } if MAKE_BREAKPOINTS
         end
 
         # Get the Project and Lab for each experiment
@@ -210,7 +231,7 @@ else
           end
         }
         # Save a breakpoint so we don't have to get the experiment and lab again
-#        File.open('breakpoint3.dmp', 'w') { |f| Marshal.dump(exps, f) }
+        File.open('breakpoint3.dmp', 'w') { |f| Marshal.dump(exps, f) } if MAKE_BREAKPOINTS
       end
 
       # Get all of the protocol types associated with each experiment
@@ -221,7 +242,7 @@ else
         e["protocol_types"] = r.get_protocol_types(e["xschema"])
       }
       # Save a breakpoint so we don't have to get the protocol types again
-#      File.open('breakpoint4.dmp', 'w') { |f| Marshal.dump(exps, f) }
+      File.open('breakpoint4.dmp', 'w') { |f| Marshal.dump(exps, f) } if MAKE_BREAKPOINTS
     end
 
     # For all of the specimens that refer to a specimen from an old project, pull
@@ -243,7 +264,10 @@ else
 
     }
     puts "Done."
-
+    # Save the list of experiments so we can run this script again without regenerating it
+    File.open('breakpoint5.dmp', 'w') { |f| Marshal.dump(exps, f) } if MAKE_BREAKPOINTS
+    end
+    
     ############################################################################
     # Okay, we've fetched (almost) all of the data we want about these experiments, 
     # so now we try to translate it into something useful.
@@ -256,6 +280,7 @@ else
       e["cell_line"] = Array.new if e["cell_line"].nil?
       e["stage"] = Array.new if e["stage"].nil?
       e["compound"] = Array.new if e["compound"].nil?
+      e["temp"] = Array.new if e["temp"].nil? 
       e["array_platform"] = Array.new if e["array_platform"].nil?
       e["growth_condition"] = Array.new if e["growth_condition"].nil?
       e["rnai_targets"] = Array.new if e["rnai_targets"].nil?
@@ -276,6 +301,23 @@ else
         end
       }
       e["compound"] = filtered_compounds
+
+      filtered_temps = Array.new
+      e["temp"].each { |temp|
+        if temp.is_a?(Hash) then
+          tmp = ""
+          #puts temp.inspect
+          tmp = "#{temp["value"]}"
+          unit = ""
+          unit = temp["attributes"].find { |attr| attr["heading"] =~ /Unit/i } 
+          tmp += " #{unit["value"]}" unless unit.nil?
+          puts "found temp #{tmp}" if (tmp != "")
+          filtered_temps.push tmp
+        else
+          filtered_temps.push e["temp"]
+        end
+      }
+      e["temp"] = filtered_temps.uniq
 
       e["specimens"].each { |sp|
         ####
@@ -513,6 +555,18 @@ else
           end
         end
 
+
+        #############
+        #   TEMPS   #
+        #############
+        #right now, just list the first one
+        #FIXME: iterate over the list of all temps
+        if sp["type"] =~ /MO:Temperature/i then
+          temp = sp["attributes"].find { |attr| attr["name"] =~ /Parameter Value/i }["value"]
+          unit = sp["attributes"].find { |attr| attr["heading"] =~ /Unit/i }["value"]
+          e["temp"].push "#{temp} #{unit}"
+        end
+        
 
         #############
         #  SRA IDs  #
@@ -1027,17 +1081,17 @@ else
     puts "#{exps.size} total projects"
     #exps.delete_if { |e| (e["status"] != "released" && e["status"] != "approved by user") || e["deprecated"] }
     #puts "#{exps.size} released projects"
-#    File.open('breakpoint5.dmp', 'w') { |f| Marshal.dump(exps, f) }
+    File.open('breakpoint6.dmp', 'w') { |f| Marshal.dump(exps, f) } if MAKE_BREAKPOINTS
   end
 
   # Get GFF files associated with each experiment
-  puts "Collecting GFF files for experiments."
-  exps.each { |e|
-    e["gff"] = r.collect_gff(e["xschema"]).join(", ")
-    print "."; $stdout.flush
-  }
-  puts ""
-  puts "Done."
+  #puts "Collecting GFF files for experiments."
+  #exps.each { |e|
+  #  e["gff"] = r.collect_gff(e["xschema"]).join(", ")
+  #  print "."; $stdout.flush
+  #}
+  #puts ""
+  #puts "Done."
 
   # Get microarray information
   puts "Getting microarray size."
@@ -1058,9 +1112,27 @@ else
   }
   puts "Done."
 
-  puts "Collecting SAM files for experiments."
+  #puts "Collecting SAM/BAM files for experiments."
+  #exps.each { |e|
+  #  e["sam"] = r.collect_sam(e["xschema"]).join(", ")
+  #  print "."; $stdout.flush
+  #}
+  #puts ""
+  #puts "Done."
+
+
+  puts "Collecting files for experiments."
   exps.each { |e|
+    e["gff"] = r.collect_gff(e["xschema"]).join(", ")
     e["sam"] = r.collect_sam(e["xschema"]).join(", ")
+    e["wig"] = r.collect_wig(e["xschema"]).join(", ")
+    e["raw-array"] = r.collect_raw_array(e["xschema"]).join(", ")
+    e["raw-seq"] = r.collect_raw_seq(e["xschema"]).join(", ")
+    e["files"] = e["gff"].split(", ").map{|f| {"name" => File.basename(f), "path" => f, "type" => "gff"}}
+    e["files"] += e["sam"].split(", ").map{|f| {"name" => File.basename(f), "path" => f, "type" => "sam"}}
+    e["files"] += e["wig"].split(", ").map{|f| {"name" => File.basename(f), "path" => f, "type" => "wig"}}
+    e["files"] += e["raw-array"].split(", ").map{|f| {"name" => File.basename(f), "path" => f, "type" => "raw-array"}}
+    e["files"] += e["raw-seq"].split(", ").map{|f| {"name" => File.basename(f), "path" => f, "type" => "raw-seq"}}
     print "."; $stdout.flush
   }
   puts ""
@@ -1071,6 +1143,8 @@ else
   exps.each { |e|
     if e["experiment_types"].include?("CAGE") then
       # Line count of SAM file
+      # nlw: this is a hacking way of doing this - will probably die with bam files
+      # FIXME: get sequence counts from experiment prop
       e["sequence_count"] = 0
       e["sam"].each { |sam_file|
         puts "Found SAM #{sam_file} for #{e["xschema"]}"
@@ -1138,6 +1212,7 @@ exps.each { |e|
       "antibody_names" => [],
       "antibody_targets" => [],
       "compound" => [],
+      "temp" => [],
       "array_platform" => [],
       "growth_condition" => [],
       "dnase_treatment" => [],
@@ -1316,7 +1391,7 @@ exps.each { |e|
   }
 
 
-#  File.open('breakpoint6.dmp', 'w') { |f| Marshal.dump(exps, f) }
+  File.open('breakpoint7.dmp', 'w') { |f| Marshal.dump(exps, f) } if MAKE_BREAKPOINTS
 
 puts "Done."
 
