@@ -44,7 +44,7 @@ end
 
 def is_histone_antibody(antibody)
   if antibody =~ /(?:^|[Hh]istone )H\d+(([A-Z]\d.*|[Tt]etra)([Mm][Ee]|[Aa][Cc]|[Bb]ubi))?/
-    puts "Modification site change because antibody is #{antibody}"
+    print "Modification site change because antibody is #{antibody}."
     if antibody =~ /[tT]rimethylated Lys-(\d+) o[fn] histone (H\d+)/ then
       m = antibody.match(/[tT]rimethylated Lys-(\d+) o[fn] histone (H\d+)/)
       antibody = "#{m[2]}K#{m[1]}Me3"
@@ -144,6 +144,7 @@ else
           # generate a list of "nice" type names. For instance, types containing
           # "intron", "exon", "start_codon", "stop_codon" are all categorized as
           # "splice sites"
+          print "Feature types..."
           exps.each { |e|
             nice_types = r.get_nice_types(e["types"])
             if nice_types.size == 0 then
@@ -153,9 +154,10 @@ else
             end
             e["types"] = nice_types
           }
+          puts "Done."
 
           # Get all of the organisms for this experiment
-          print "Organisms\n"
+          print "Organisms"
           exps.each { |e|
             print "."; $stdout.flush
             e["organisms"] = r.get_organisms_for_experiment(e["xschema"])
@@ -163,11 +165,22 @@ else
               o["genus"] == "Unknown" || o["genus"] == "N/A"
             }
           }
-          print "\n"
+          puts "Done"
+
+          print "Read Counts"
+          exps.each{ |e|
+            print "."; $stdout.flush
+            counts = r.get_read_counts_for_schema(e["xschema"])
+            e["read_count"] = counts.sum unless counts.nil?
+          }
+          puts "Done."
+
 
           # Get all of the reagents (antibodies, strains, stages, cell lines) for 
-          # each experiment
-          print "Reagents\n"
+          # each experiment            
+        FILE_TYPES = ["Browser_Extensible_Data_Format 6 (BED6+3)", "Browser_Extensible_Data_Format (BED)", "Signal_Graph_File", "WIG", "CEL", "nimblegen_microarray_data_file (pair)", "agilent_raw_microarray_data_file (TXT)", "FASTQ", "SFF", "CSFASTA", "GFF3", "Sequence_Alignment/Map (SAM)", "Binary Sequence_Alignment/Map (BAM)"]
+          #
+          print "Reagents"
           exps.each { |e|
             print "."; $stdout.flush
             data = r.get_data_for_schema(e["xschema"])
@@ -209,11 +222,14 @@ else
             # with an "official name" field
             e["arrays"] = r.collect_microarrays(data, e["xschema"])
 
+            #files
+            e["files"] = r.collect_files(data, e["xschema"])
+
             e["compound"] = r.collect_compounds(data, e["xschema"])
 
             e["temp"] = r.collect_temps(data, e["xschema"])
           }
-          print "\n"
+          puts "Done"
 
           # Save a breakpoint here so if something after specimen collection crashes
           # we don't have to query them all from the database again.
@@ -235,15 +251,16 @@ else
       end
 
       # Get all of the protocol types associated with each experiment
-      puts "Protocol types"
+      print "Protocol types"
       exps.each { |e|
-        print "."
+        print "."; $stdout.flush
         $stdout.flush
         e["protocol_types"] = r.get_protocol_types(e["xschema"])
       }
       # Save a breakpoint so we don't have to get the protocol types again
       File.open('breakpoint4.dmp', 'w') { |f| Marshal.dump(exps, f) } if MAKE_BREAKPOINTS
     end
+    puts "Done."
 
     # For all of the specimens that refer to a specimen from an old project, pull
     # in any other specimens and protocol types from the old project that happen in
@@ -252,7 +269,7 @@ else
     # extraction, organism purification, etc., as well as the data attached to
     # those protocols.
 
-    puts "Checking for referenced submissions."
+    puts "  Checking for referenced submissions."
     exps.each { |e|
       # I have an SRA ID and I need to find it in an old experiment
       # Then I need to folow the graph in the old experiment to collect speciments
@@ -274,7 +291,9 @@ else
 
     # Search through all of the "specimen" data to see if we can discover the 
     # tissue, strain, cell line, and/or stage of the organism(s) involved.
+    print "Procesing specimens"
     exps.each { |e|
+      print "."; $stdout.flush
       e["tissue"] = Array.new if e["tissue"].nil?
       e["strain"] = Array.new if e["strain"].nil?
       e["cell_line"] = Array.new if e["cell_line"].nil?
@@ -311,7 +330,6 @@ else
           unit = ""
           unit = temp["attributes"].find { |attr| attr["heading"] =~ /Unit/i } 
           tmp += " #{unit["value"]}" unless unit.nil?
-          puts "found temp #{tmp}" if (tmp != "")
           filtered_temps.push tmp
         else
           filtered_temps.push e["temp"]
@@ -659,30 +677,34 @@ else
       end
 
     }
-
+    puts "Done."
 
     # Figure out DNAse treatment based on protocol names
+    print "Getting DNAse treatments"
     exps.each { |e|
+      print "." ; $stdout.flush
       if e["protocol_types"].find { |row| row["name"] =~ /no dnase/i } then
         e["dnase_treatment"] = "no"
       else
         e["dnase_treatment"] = ""
       end
     }
-
+    puts "Done."
 
     # Get any GEO IDs from Chado
-    puts "  Getting GEO IDs for submissions"
+    print "Getting GEO IDs for submissions"
     exps.each { |e|
       print "."; $stdout.flush
       geo_ids = r.get_geo_ids_for_schema(e["xschema"])
       e["GSM"] = Array.new if e["GSM"].nil?
       e["GSM"] += geo_ids unless geo_ids.nil?
     }
-    puts "\n"
+    puts "Done\n"
 
     # Search through all of the protocol types to figure out the type of the 
     # experiment
+    
+    print "Getting experiment types"
     exps.each { |e|
       protocol_types = e["protocol_types"].map { |row| row["type"] }
 
@@ -723,7 +745,7 @@ else
           e["types"].push "raw sequences"
           end
         end
-        print "."
+        print "." ; $stdout.flush
         next
       end
 
@@ -891,7 +913,9 @@ else
         e["types"].push "raw sequences"
       end
     }
-    print "\n"
+    print "Done.\n" #Experiment Types
+
+    print "Collecting antibody information"
 
     # Search through all of the antibody data to try to find antibody names
     exps.each { |e|
@@ -902,23 +926,45 @@ else
       e["antibody_targets"] = Array.new if e["antibody_targets"].nil?
 
       e["antibodies"].each { |a|
-        # since we are capturing both a target and antibody name, we'll assign both
-        #there should always be a worm or fly gene id for an antibody, that should be the "target"
-        target = a["attributes"].find { |attr| attr["heading"] == "target id" }
-        target = target["value"] unless target.nil?
+        # check to see if the antibody is specifically to a histone mod
+        # this has a specific wiki template
+        #puts a.pretty_inspect
+        if (a["attributes"].find { |attr| attr["heading"] == "Histone_name" } ) then
+          n = a["attributes"].find { |attr| attr["heading"] == "Histone_name" }
+          aa = a["attributes"].find { |attr| attr["heading"] == "AA_modified" }
+          aa_pos = a["attributes"].find { |attr| attr["heading"] == "AA_pos" }
+          mod = a["attributes"].find { |attr| attr["heading"] == "Modification" }
+          target = ""
+          target += n.nil? ? "" : n["value"]
+          target += aa.nil? ? "" : aa["value"]
+          target += aa_pos.nil? ? "" : aa_pos["value"]
+          target += mod.nil? ? "" : mod["value"] 
+          puts "Found Histone mod antibody: #{target}" 
+        else
+          #otherwise it's a regular antibody, 
+          # since we are capturing both a target and antibody name, we'll assign both
+          #there should always be a worm or fly gene id for an antibody, that should be the "target"
+          target = a["attributes"].find { |attr| attr["heading"] == "target id" }
+          target = target["value"] unless target.nil?
 
-        #if the target gene id can't be found, then use the target name
-        target = a["attributes"].find { |attr| attr["heading"] == "target name" } 
-        target = (target.nil? || target["value"] == "Not Applicable") ? nil : target["value"]
-        # If not a target name on an antibody, what about a target ID attached to a
-        # specimen in this project?  this might be the case for GFP or FLAG
-        e["specimens"].each { |sp| 
-          target_id = sp["attributes"].find { |attr| attr["heading"] == "target id" || attr["heading"] == "transgene" }
-          if target_id then
-            target = target_id["value"]
-            break
-          end
-        }
+          #put in a standard string, if this is a control
+          target = a["attributes"].find { |attr| attr["species"] == "None-Control" }
+          target = target["value"] unless target.nil?
+
+          #if the target gene id can't be found, then use the target name
+          target = a["attributes"].find { |attr| attr["heading"] == "target name" } 
+          target = (target.nil? || target["value"] == "Not Applicable") ? nil : target["value"]
+
+          # If not a target name on an antibody, what about a target ID attached to a
+          # specimen in this project?  this might be the case for GFP or FLAG
+          e["specimens"].each { |sp| 
+            target_id = sp["attributes"].find { |attr| attr["heading"] == "target id" || attr["heading"] == "transgene" }
+            if target_id then
+              target = target_id["value"]
+              break
+            end
+          }
+        end
         name = a["attributes"].find { |attr| attr["heading"] == "official name" }
         name = name["value"] unless name.nil?
         
@@ -1048,7 +1094,11 @@ else
 
       # Some cleanup
       e["antibody_targets"].each { |abtarget| abtarget.sub!(/nejire/, 'nej') }
+      e["antibody_names"].each { |abn| abn = (abn =~ /RNA\s*pol.*\s*II/i ) ? "RNA polymerase II" : abn }
+
+      print "." ; $stdout.flush
     }
+    puts "Done\n"
 
     # Throw out any deprecated or unreleased projects; look up the status in the pipeline
     # database, which is separate from Chado
@@ -1057,7 +1107,9 @@ else
     sth_release_date = dbh.prepare("SELECT MAX(c.end_time) AS release_date FROM commands c 
                                    INNER JOIN projects p ON p.id = c.project_id 
                                    WHERE c.type = 'Release' AND c.status = 'released' GROUP BY p.id HAVING p.id = ?")
+    print "  Looking up submission status."
     exps.clone.each { |e|
+      print "." ; $stdout.flush
       pipeline_id = e["xschema"].match(/_(\d+)_/)[1].to_i
       sth.execute(pipeline_id)
       (status, deprecated, superseded, created_at, updated_at) = sth.fetch_array
@@ -1082,21 +1134,14 @@ else
     #exps.delete_if { |e| (e["status"] != "released" && e["status"] != "approved by user") || e["deprecated"] }
     #puts "#{exps.size} released projects"
     File.open('breakpoint6.dmp', 'w') { |f| Marshal.dump(exps, f) } if MAKE_BREAKPOINTS
+
   end
 
-  # Get GFF files associated with each experiment
-  #puts "Collecting GFF files for experiments."
-  #exps.each { |e|
-  #  e["gff"] = r.collect_gff(e["xschema"]).join(", ")
-  #  print "."; $stdout.flush
-  #}
-  #puts ""
-  #puts "Done."
-
   # Get microarray information
-  puts "Getting microarray size."
+  print "Getting microarray sizes."
   require 'pp'
   exps.each { |e|
+    print "." ; $stdout.flush
     e["array_size"] = e["arrays"].map { |arr|
       arr["attributes"]
     }.map { |array_attrs|
@@ -1112,30 +1157,33 @@ else
   }
   puts "Done."
 
-  #puts "Collecting SAM/BAM files for experiments."
-  #exps.each { |e|
-  #  e["sam"] = r.collect_sam(e["xschema"]).join(", ")
-  #  print "."; $stdout.flush
-  #}
-  #puts ""
-  #puts "Done."
-
-
   puts "Collecting files for experiments."
   exps.each { |e|
-    e["gff"] = r.collect_gff(e["xschema"]).join(", ")
-    e["sam"] = r.collect_sam(e["xschema"]).join(", ")
-    e["wig"] = r.collect_wig(e["xschema"]).join(", ")
-    e["raw-array"] = r.collect_raw_array(e["xschema"]).join(", ")
-    e["raw-seq"] = r.collect_raw_seq(e["xschema"]).join(", ")
-    e["files"] = e["gff"].split(", ").map{|f| {"name" => File.basename(f), "path" => f, "type" => "gff"}}
-    e["files"] += e["sam"].split(", ").map{|f| {"name" => File.basename(f), "path" => f, "type" => "sam"}}
-    e["files"] += e["wig"].split(", ").map{|f| {"name" => File.basename(f), "path" => f, "type" => "wig"}}
-    e["files"] += e["raw-array"].split(", ").map{|f| {"name" => File.basename(f), "path" => f, "type" => "raw-array"}}
-    e["files"] += e["raw-seq"].split(", ").map{|f| {"name" => File.basename(f), "path" => f, "type" => "raw-seq"}}
+
+    e["gff"] = r.collect_gff(e["xschema"])
+    e["sam"] = r.collect_sam(e["xschema"])
+    #e["wig"] = r.collect_wig(e["xschema"])
+    #e["raw-array"] = r.collect_raw_array(e["xschema"])
+    #e["raw-seq"] = r.collect_raw_seq(e["xschema"])
+
+    #retain only result_files
+    e["files"].delete_if { |d| d["heading"] =~ /Parameter/}
+    #e["files"].map { |d|
+      #puts d.pretty_inspect  
+     # {"name" => File.basename(d["value"]),
+     #      "path" => d["value"]
+     #      "type" => d["type"]
+     #      "url" => (u = d["attributes"].find{|attr| attr["name"] == "URL"} ; u.nil? ? "" : u["value"])
+     # }      
+      #|f| {"name" => File.basename(f), "path" => f, "type" => "gff"}
+    #} unless e["files"].nil?
+      #e["files"] += e["sam"].split(", ").map{|f| {"name" => File.basename(f), "path" => f, "type" => "sam"}}
+    #e["files"] += e["wig"].split(", ").map{|f| {"name" => File.basename(f), "path" => f, "type" => "wig"}}
+    #e["files"] += e["raw-array"].split(", ").map{|f| {"name" => File.basename(f), "path" => f, "type" => "raw-array"}}
+    #e["files"] += e["raw-seq"].split(", ").map{|f| {"name" => File.basename(f), "path" => f, "type" => "raw-seq"}}
+    #e["files"].delete_if{|f| f["name"] == ""}
     print "."; $stdout.flush
   }
-  puts ""
   puts "Done."
 
   # Get feature counts for CAGE or cDNA sequencing experiments
@@ -1188,8 +1236,10 @@ exps.each { |e|
   # Get any projects that aren't in Chado yet
   chado_ids = exps.map { |e| e["xschema"].match(/_(\d+)_/)[1].to_i }
 
+  puts "Getting submissions that are not yet in Chado."
   sth = dbh.prepare("SELECT id, name, status, pi, lab, created_at, deprecated_project_id, superseded_project_id FROM projects")
   sth.execute()
+  new_project_count = 0
   sth.fetch_all.each { |row|
     next if chado_ids.include?(row["id"].to_i)
     new_exp = {
@@ -1222,9 +1272,11 @@ exps.each { |e|
       "rnai_targets" => []
     }
     exps.push(new_exp)
+    new_project_count += 1
   }
   sth.finish
   dbh.disconnect
+  puts "Done.  Found #{new_project_count} submissions not yet in Chado."
 
   puts "Trying to figure out project versions"
   exps.each { |e|
@@ -1382,8 +1434,8 @@ exps.each { |e|
     if (e["replicates"].nil? || e["replicates"] == 0 || e["replicates"] == "MISSING") then
       puts e["xschema"]
       puts "  No replicate info! Continuing..."
-      puts e["experiment_types"].pretty_inspect
-      puts e["all_data"].map { |d| "#{d["heading"]} [#{d["name"]}] = #{d["value"]}" }.pretty_inspect
+      #puts e["experiment_types"].pretty_inspect
+      #puts e["all_data"].map { |d| "#{d["heading"]} [#{d["name"]}] = #{d["value"]}" }.pretty_inspect
       # Again, don't just exit -- set the replicates to a fake value and carry on
       e["replicates"] = "NO REPLICATES FOUND" # TODO FIXME is this the best course of action?
       # exit

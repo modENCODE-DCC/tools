@@ -78,7 +78,7 @@ class Formatter
     end
   end
   
-  def self.format_files(exps, collapse_long=true, extra_cols = {})
+  def self.format_files(exps, collapse_long=false, extra_cols = {})
     
     cols = [ "Submission ID",
              "Title",
@@ -103,7 +103,8 @@ class Formatter
              "Date Data Submitted",
              "Release Date",
              "GEO/SRA IDs",
-          ] + extra_cols.keys
+             "Project"
+    ] + extra_cols.keys
 
     if block_given? then
         yield cols
@@ -124,6 +125,8 @@ class Formatter
         cols.push "#{subid}"
         cols.push e["uniquename"]
         cols.push "NO FILES FOUND"
+        cols.push "NO FILES FOUND"
+        cols.push ""
         cols.push e["lab"]
         cols.push e["organisms"].map { |o| "#{o["genus"]} #{o["species"]}" }.join(", ")
         cols.push e["status"]
@@ -151,6 +154,7 @@ class Formatter
         geo_ids += e["GSM"] unless e["GSM"].nil?
         geo_ids += e["sra_ids"] unless e["sra_ids"].nil?
         cols.push geo_ids.compact.uniq.reject { |id| id.empty? }.sort.join(", ")
+        cols.push e["project"]
         extra_cols.values.each { |colname| cols.push e[colname] }
        
         if block_given? then
@@ -164,8 +168,8 @@ class Formatter
           cols = Array.new
           cols.push "#{subid}"
           cols.push e["uniquename"]
-          cols.push f["name"]
-          cols.push f["path"]
+          cols.push File.basename(f["value"])
+          cols.push f["value"]
           cols.push f["type"]
           cols.push e["lab"]
           cols.push e["organisms"].map { |o| "#{o["genus"]} #{o["species"]}" }.join(", ")
@@ -193,6 +197,7 @@ class Formatter
            geo_ids += e["GSM"] unless e["GSM"].nil?
            geo_ids += e["sra_ids"] unless e["sra_ids"].nil?
            cols.push geo_ids.compact.uniq.reject { |id| id.empty? }.sort.join(", ")
+           cols.push e["project"]
            extra_cols.values.each { |colname| cols.push e[colname] }
           
            if block_given? then
@@ -520,6 +525,89 @@ return factors
   end
 
   def self.format_amazon_tagging(exps, filename = "amazon_tagging.csv")
+    File.open(filename, "w") { |f|
+      header = true
+      #col_order = ["DCC id", "Title", "Data File", "Data Filepath", "Level 1 <organism>", "Level 2 <Target>", "Level 3 <Technique>", "Level 4 <File Format>", "Filename <Factor>", "Filename <Condition>", "Filename <Technique>", "Filename <Modencode ID>", "factor", "Strain", "Cell Line", "Devstage", "Tissue", "other conditions", "PI", "GEO/SRA IDs", "Status"]
+     col_order = ["DCC id", "Title", "Data File", "Data Filepath", "Level 1 <organism>", "Level 2 <Target>", "Level 3 <Technique>", "Level 4 <File Format>", "Filename <Factor>", "Filename <Condition>", "Filename <Technique>", "Filename <ReplicateSetNum>", "Filename <ChIP>", "Filename <label>", "Filename <Build>", "Filename <Modencode ID>", "Uniform filename", "Extensional Uniform filename", "factor", "Strain", "Cell Line", "Devstage", "Tissue", "other conditions", "PI", "GEO/SRA IDs", "Status"]
+      col_index = Hash.new
+      Formatter::format_files(exps, false, {}) { |cols|
+        if header then #the header line only
+          cols.each_index { |idx| col_index[cols[idx]] = idx}
+          f.puts col_order.join("\t")
+          header = false
+        else #the content of the file
+          line = Array.new
+          col_order.each { |k|
+            idx = col_index[k]
+            cols[idx] = cols[idx].to_s.gsub(/N\/A/, "") unless (idx.nil? || cols[idx].nil?)
+            cols[idx] = cols[idx].to_s.gsub(/^\s*|\s*$/, "") unless (idx.nil? || cols[idx].nil?)
+            subid = cols[col_index["Submission ID"]]
+            if k == "DCC id" then
+              line.push "#{subid}"
+            elsif k == "Level 1 <organism>" then
+              line.push cols[col_index["Organism"]] 
+            elsif k == "Level 2 <Target>" then
+              line.push cols[col_index["Data Type"]]
+            elsif (k ==  "Filename <Technique>") || (k == "Level 3 <Technique>") then
+              line.push cols[col_index["Assay"]]
+            elsif (k == "Devstage" ) || (k == "Filename <Condition>") then
+              line.push Formatter::slim_stages(cols[col_index["Stage/Treatment"]])
+            elsif k == "Filename <Modencode ID>" then
+              line.push "modENCODE_#{subid}"
+            elsif k ==  "Cell Line" then
+              l, cols = Formatter::cleanup_cell_line(cols[col_index["Cell Line"]], cols, col_index)
+              line.push l.to_s
+            elsif k == "PI" then
+              line.push cols[col_index["Project"]]
+            elsif k == "Filename <Factor>"  then
+              factor = cols[col_index["Antibody Name"]] unless col_index["Antibody Name"].nil?
+              data_type = cols[col_index["Data Type"]]
+              if ((data_type == "RNA profiling") || (data_type == "transcription") || (data_type == "raw sequences" ) ) then
+                factor = "RNA"  
+                #TODO: inspect RNAsize to determine if it is smallRNA
+              elsif ((data_type == "ORC") || (data_type == "origins of replication")) then
+                factor = "Replication-Origin"
+              elsif ((data_type == "copy number variation")) then
+                factor = "Replication-Copy-Number"
+              elsif ((data_type == "replication timing")) then
+                factor = "Replication-Timing"
+              end
+              line.push factor
+            elsif k == "factor" then
+              factor = cols[col_index["Target"]]
+              data_type = cols[col_index["Data Type"]]
+              if ((data_type == "RNA profiling") || (data_type == "transcription") || (data_type == "raw sequences" ) ) then
+                factor = "RNA"  
+                #TODO: inspect RNAsize to determine if it is smallRNA
+              elsif ((data_type == "ORC") || (data_type == "origins of replication")) then
+                factor = "Replication-Origin"
+              elsif ((data_type == "copy number variation")) then
+                factor = "Replication-Copy-Number"
+              elsif ((data_type == "replication timing")) then
+                factor = "Replication-Timing"
+              end
+              line.push factor
+            elsif k == "other conditions" then
+              treatments = Array.new
+              treatments.push "RNAiTarget_#{cols[col_index["RNAi Target"]]}" if cols[col_index["RNAi Target"]].length > 0 unless (idx.nil? || cols[idx].nil?)
+              treatments.push "GrowthCondition_#{cols[col_index["Growth Condition"]]}" if cols[col_index["Growth Condition"]].length > 0 unless (idx.nil? || cols[idx].nil?)
+              treatments.push "Compound_#{cols[col_index["Compound"]].gsub(/sodium chloride/, "NaCl")}" if !cols[col_index["Compound"]].empty?  unless (idx.nil? || cols[idx].nil?)
+              treatments.push "Temperature_#{cols[col_index["Temp"]]}" if cols[col_index["Temp"]].length > 0 unless (idx.nil? || cols[idx].nil?)
+              line.push treatments.map { |s| s.gsub(/, /, ",") }.join(";")
+            elsif idx.nil? then
+              line.push "*"
+            else
+              line.push cols[idx]
+            end
+          }
+          f.puts line.join("\t")
+        end
+      }
+    }
+  end
+
+
+  def self.format_amazon_bad(exps, filename = "amazon_tagging.csv")
     filename = "amazon_tagging.csv" if filename.nil?
     File.open(filename, "w") { |f|
       header = true

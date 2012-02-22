@@ -122,6 +122,18 @@ class ChadoReporter
     end
   end
 
+  def get_read_counts_for_schema(schema)
+    sth = @dbh.prepare("SELECT value FROM #{schema}.experiment_prop WHERE name = 'Total Read Count'")
+    sth.execute
+    ret = sth.fetch_array
+    sth.finish
+    if ret.nil?
+      return []
+    else
+      return [ ret[0] ]
+    end
+  end
+
   def get_geo_ids_for_schema(schema)
     sth = @dbh.prepare("
       SELECT d.value FROM #{schema}.data d INNER JOIN #{schema}.cvterm cvt ON d.type_id = cvt.cvterm_id
@@ -668,7 +680,7 @@ class ChadoReporter
     temps.each { |d| 
       attrs = self.get_attributes_for_datum(d["data_id"], xschema)
       d["attributes"] = attrs
-      filtered_antibodies.push d
+      filtered_temps.push d
       }
     filtered_temps = filtered_temps.uniq_by { |d| d["attributes"].nil? ? nil : d["attributes"] }
     return filtered_temps
@@ -691,13 +703,27 @@ class ChadoReporter
     return filtered_arrays
   end
 
+  def collect_files(data, xschema)
+    file_types = ["Browser_Extensible_Data_Format 6 (BED6+3)", "Browser_Extensible_Data_Format (BED)", "Signal_Graph_File", "WIG", "CEL", "nimblegen_microarray_data_file (pair)", "agilent_raw_microarray_data_file (TXT)", "FASTQ", "SFF", "CSFASTA", "GFF3", "Sequence_Alignment/Map (SAM)", "Binary Sequence_Alignment/Map (BAM)"]
+    filtered_files = Array.new
+    files = data.find_all {|d| file_types.find_all{|t| d["type"] =~ /#{Regexp.escape(t)}/ }.length > 0 }
+    files.each { |d|
+      attrs = self.get_attributes_for_datum(d["data_id"], xschema)
+      d["attributes"] = attrs
+      filtered_files.push d
+      
+    }
+    filtered_files = filtered_files.uniq_by { |d| d["attributes"].nil? ? nil : d["attributes"] }
+    return filtered_files
+  end 
+
   def collect_gff(schema)
     sth = @dbh.prepare("
-                       SELECT d.value FROM #{schema}.data d
+                       SELECT d FROM #{schema}.data d
                        INNER JOIN #{schema}.cvterm cvt ON d.type_id = cvt.cvterm_id
                        WHERE cvt.name = 'GFF3'
-                       GROUP BY d.value
                        ")
+                       #GROUP BY d.value
     sth.execute
     gffs = sth.fetch_all.flatten
     sth.finish
@@ -706,14 +732,14 @@ class ChadoReporter
 
   def collect_wig(schema)
       sth = @dbh.prepare("
-                          SELECT d.value FROM #{schema}.data d
+                          SELECT d FROM #{schema}.data d
                           INNER JOIN #{schema}.cvterm cvt ON d.type_id = cvt.cvterm_id
                           WHERE cvt.name = 'WIG'
                           OR cvt.name = 'Browser_Extensible_Data_Format 6 (BED6+3)'
                           OR cvt.name = 'Browser_Extensible_Data_Format (BED)'
                           OR cvt.name = 'Signal_Graph_File'
-                          GROUP BY d.value
                        ")
+                          #GROUP BY d.value
       sth.execute
       wigs = sth.fetch_all.flatten
       sth.finish
@@ -722,13 +748,13 @@ class ChadoReporter
 
   def collect_raw_array(schema)
       sth = @dbh.prepare("
-                         SELECT d.value FROM #{schema}.data d
+                         SELECT d FROM #{schema}.data d
                          INNER JOIN #{schema}.cvterm cvt ON d.type_id = cvt.cvterm_id
                          WHERE cvt.name = 'CEL'
                          OR cvt.name = 'agilent_raw_microarray_data_file (TXT)'
                          OR cvt.name = 'nimblegen_microarray_data_file (pair)'
-                         GROUP BY d.value
                          ")
+                          #GROUP BY d.value
       sth.execute                        
       raws = sth.fetch_all.flatten
       sth.finish                                                                                                            
@@ -737,13 +763,14 @@ class ChadoReporter
 
   def collect_raw_seq(schema)
       sth = @dbh.prepare("
-                          SELECT d.value FROM #{schema}.data d
+                          SELECT d FROM #{schema}.data d
                           INNER JOIN #{schema}.cvterm cvt ON d.type_id = cvt.cvterm_id
                           WHERE cvt.name = 'FASTQ'
                           OR cvt.name = 'SFF'
                           OR cvt.name = 'CSFASTA'
-                          GROUP BY d.value
                          ")
+
+                          #GROUP BY d.value
       sth.execute                        
       raws = sth.fetch_all.flatten
       sth.finish
@@ -752,12 +779,14 @@ class ChadoReporter
 
   def collect_sam(schema)
     sth = @dbh.prepare("
-                       SELECT d.value FROM #{schema}.data d
+                       SELECT d FROM #{schema}.data d
                        INNER JOIN #{schema}.cvterm cvt ON d.type_id = cvt.cvterm_id
                        WHERE cvt.name = 'Sequence_Alignment/Map (SAM)' 
 		       OR cvt.name = 'Binary Sequence_Alignment/Map (BAM)'
-                       GROUP BY d.value
                        ")
+
+                       #GROUP BY d.value
+                       
     sth.execute
     sams = sth.fetch_all.flatten
     sth.finish
