@@ -42,11 +42,15 @@ class Eutils
     })
 
     r = REXML::Document.new(res)
-    return [
-      r.elements["eSearchResult"].elements["WebEnv"].text,
-      r.elements["eSearchResult"].elements["QueryKey"].text,
-      r.elements["eSearchResult"].elements["IdList"].elements.map { |elem_id| elem_id.text }
-    ]
+    if r.nil? then
+      return nil
+    else
+      return [
+        r.elements["eSearchResult"].elements["WebEnv"].text,
+        r.elements["eSearchResult"].elements["QueryKey"].text,
+        r.elements["eSearchResult"].elements["IdList"].elements.map { |elem_id| elem_id.text }
+      ]
+    end
   end
 
   def request(resource, args = nil)

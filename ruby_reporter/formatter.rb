@@ -23,6 +23,7 @@ class Formatter
         "Date Data Submitted",
         "Release Date",
         "GEO/SRA IDs",
+        "Total Read Count",
     ] + extra_cols.keys
     if block_given? then
       yield cols
@@ -68,6 +69,7 @@ class Formatter
       geo_ids += e["GSM"] unless e["GSM"].nil?
       geo_ids += e["sra_ids"] unless e["sra_ids"].nil?
       cols.push geo_ids.compact.uniq.reject { |id| id.empty? }.sort.join(", ")
+      cols.push e["read_count"].nil? ? "NO READS" : e["read_count"]
       extra_cols.values.each { |colname| cols.push e[colname] }
 
       if block_given? then
@@ -103,7 +105,10 @@ class Formatter
              "Date Data Submitted",
              "Release Date",
              "GEO/SRA IDs",
-             "Project"
+             "Project",
+             "Filename <ChIP>",
+             "OICR File Path",
+             "Filename <label>"
     ] + extra_cols.keys
 
     if block_given? then
@@ -120,13 +125,30 @@ class Formatter
       e["status"] = "superseded" if e["superseded"]
       e["status"] = "deprecated" if e["deprecated"]
       files = e["files"]
+      
       if files.nil? then
+        files = [{"value" => "NO FILES FOUND", "type" => "" }]
+      end
+
+      files.delete_if { |f| f["heading"] !~ /Result/ } unless files.nil?
+
+      files.each do |f|
+        #assume f is a hash, with name, path, type
         cols = Array.new
         cols.push "#{subid}"
         cols.push e["uniquename"]
-        cols.push "NO FILES FOUND"
-        cols.push "NO FILES FOUND"
-        cols.push ""
+        f["value"] = "ANONYMOUS DATUM" if ((f["heading"] =~ /Anonymous/i))
+        cols.push File.basename(f["value"])
+        cols.push f["value"]
+
+        #reformat the file format/type
+        format = f["type"]
+        re_format = { "raw-arrayfile" => ["CEL", "pair", "agilent", "raw_microarray_data_file"], "raw-seqfile" => ["FASTQ", "CSFASTA", "SFF"],
+          "gene-model" => ["GFF3"], "WIG" => ["WIG", "Signal_Graph_File", "BED"], "alignment" => ["SAM", "BAM"] }
+        #missing:  TraceArchive_record, GEO_record, gene-model_txt (submission 3305)
+        format = re_format.map{|newtype,origtypes| x = origtypes.find{|t| format =~ /#{t}/i}; x.nil? ? nil : "#{newtype}_#{x}" }.flatten.compact 
+        cols.push format.nil? ? "" : format 
+        #cols.push f["type"].split(":").shift.join(":") if !f["type"].empty? #remove ontology prefix
         cols.push e["lab"]
         cols.push e["organisms"].map { |o| "#{o["genus"]} #{o["species"]}" }.join(", ")
         cols.push e["status"]
@@ -134,79 +156,44 @@ class Formatter
         cols.push e["experiment_types"].join(", ")
         cols.push e["tissue"].join(", ")
         cols.push e["strain"].map { |s|
-          s == "y[1]; Gr22b[1] Gr22d[1] cn[1] CG33964[R4.2] bw[1] sp[1]; LysC[1] MstProx[1] GstD5[1] Rh6[1]" ? "y; cn bw sp" : s }.map { |s|                  s =~ /y\[1\].*\scn\[1\].*\sbw\[1\].*\ssp\[1\]/ ? "y; cn bw sp" : s }.uniq.sort.join(", ")
+          s == "y[1]; Gr22b[1] Gr22d[1] cn[1] CG33964[R4.2] bw[1] sp[1]; LysC[1] MstProx[1] GstD5[1] Rh6[1]" ? "y; cn bw sp" : s }.map { |s| 
+          s =~ /y\[1\].*\scn\[1\].*\sbw\[1\].*\ssp\[1\]/ ? "y; cn bw sp" : s }.uniq.sort.join(", ")
         cols.push e["cell_line"].uniq.join(", ")
-        if collapse_long then
-          cols.push e["stage"].size > 5 ? e["stage"].sort[0..5].join(", ") + ", and #{e["stage"].size-5} more..." : e["stage"].sort.join(", ")
-        else
+        if collapse_long then          
+          cols.push e["stage"].size > 5 ? e["stage"].sort[0..5].join(", ") + ", and #{e["stage"].size-5} more..." : e["stage"].sort.join(", ")              
+        else          
           cols.push e["stage"].sort.join(", ")
-        end
+        end                                                 
         cols.push e["antibody_names"].compact.join(", ")
-        #puts "id: #{id}\n#{e.pretty_inspect}"
         cols.push e["antibody_targets"].join(", ")
         cols.push e["compound"].join(", ")
-        cols.push e["temp"].join(", ")
-        cols.push e["array_platform"].join(", ")      
-        cols.push e["rnai_targets"].join(", ")      
-        cols.push e["created_at"]      
-        cols.push((e["status"] == "released" || e["status"] == "published" || e["status"] == "deprecated" || e["status"] == "superseded") ? e["released_at"] : "")      
-        geo_ids = [e["GSE"]]
+        cols.push e["temp"].join(", ")        
+        cols.push e["array_platform"].join(", ")        
+        cols.push e["rnai_targets"].join(", ")
+        cols.push e["created_at"]
+        cols.push((e["status"] == "released" || e["status"] == "published" || e["status"] == "deprecated" || e["status"] == "superseded") ? e["released_at"] : "")
+        geo_ids = [e["GSE"]]           
         geo_ids += e["GSM"] unless e["GSM"].nil?
         geo_ids += e["sra_ids"] unless e["sra_ids"].nil?
         cols.push geo_ids.compact.uniq.reject { |id| id.empty? }.sort.join(", ")
         cols.push e["project"]
+        cols.push f["sample_type"].nil? ? "" : f["sample_type"]
+        if f["value"] =~ /^(http|ftp)/ then
+          cols.push f["value"]
+        else
+          cols.push e["root_path"].nil? ? "" : e["root_path"] + "/" + f["value"]
+        end
+        label = f["properties"].nil? ? "" : f["properties"]["label"].nil? ? "" : f["properties"]["label"].map{|l| l.nil? ? "" : l["value"]}.uniq.sort.join(",")
+        #label = f["label"].nil? ? "" : f["label"].map{|l| l.nil? ? "NIL" : l["value"]}.uniq.join(",")
+        cols.push label
         extra_cols.values.each { |colname| cols.push e[colname] }
-       
+          
         if block_given? then
           yield cols
         else
           puts cols.join("\t")
         end
-      else
-        files.each do |f|
-          #assume f is a hash, with name, path, type
-          cols = Array.new
-          cols.push "#{subid}"
-          cols.push e["uniquename"]
-          cols.push File.basename(f["value"])
-          cols.push f["value"]
-          cols.push f["type"]
-          cols.push e["lab"]
-          cols.push e["organisms"].map { |o| "#{o["genus"]} #{o["species"]}" }.join(", ")
-          cols.push e["status"]
-          cols.push e["types"].join(", ")
-          cols.push e["experiment_types"].join(", ")
-          cols.push e["tissue"].join(", ")
-          cols.push e["strain"].map { |s|
-            s == "y[1]; Gr22b[1] Gr22d[1] cn[1] CG33964[R4.2] bw[1] sp[1]; LysC[1] MstProx[1] GstD5[1] Rh6[1]" ? "y; cn bw sp" : s }.map { |s| 
-            s =~ /y\[1\].*\scn\[1\].*\sbw\[1\].*\ssp\[1\]/ ? "y; cn bw sp" : s }.uniq.sort.join(", ")
-          cols.push e["cell_line"].uniq.join(", ")
-          if collapse_long then          
-            cols.push e["stage"].size > 5 ? e["stage"].sort[0..5].join(", ") + ", and #{e["stage"].size-5} more..." : e["stage"].sort.join(", ")              else          
-            cols.push e["stage"].sort.join(", ")
-          end                                                 
-          cols.push e["antibody_names"].compact.join(", ")
-          cols.push e["antibody_targets"].join(", ")
-           cols.push e["compound"].join(", ")
-           cols.push e["temp"].join(", ")        
-           cols.push e["array_platform"].join(", ")        
-           cols.push e["rnai_targets"].join(", ")
-           cols.push e["created_at"]
-           cols.push((e["status"] == "released" || e["status"] == "published" || e["status"] == "deprecated" || e["status"] == "superseded") ? e["released_at"] : "")
-           geo_ids = [e["GSE"]]           
-           geo_ids += e["GSM"] unless e["GSM"].nil?
-           geo_ids += e["sra_ids"] unless e["sra_ids"].nil?
-           cols.push geo_ids.compact.uniq.reject { |id| id.empty? }.sort.join(", ")
-           cols.push e["project"]
-           extra_cols.values.each { |colname| cols.push e[colname] }
-          
-           if block_given? then
-            yield cols
-           else
-            puts cols.join("\t")
-          end
-        end  #each file
-      end #if files.nil?
+      end  #each file
     end #each exp
   end #def self.format_files
 
@@ -528,7 +515,7 @@ return factors
     File.open(filename, "w") { |f|
       header = true
       #col_order = ["DCC id", "Title", "Data File", "Data Filepath", "Level 1 <organism>", "Level 2 <Target>", "Level 3 <Technique>", "Level 4 <File Format>", "Filename <Factor>", "Filename <Condition>", "Filename <Technique>", "Filename <Modencode ID>", "factor", "Strain", "Cell Line", "Devstage", "Tissue", "other conditions", "PI", "GEO/SRA IDs", "Status"]
-     col_order = ["DCC id", "Title", "Data File", "Data Filepath", "Level 1 <organism>", "Level 2 <Target>", "Level 3 <Technique>", "Level 4 <File Format>", "Filename <Factor>", "Filename <Condition>", "Filename <Technique>", "Filename <ReplicateSetNum>", "Filename <ChIP>", "Filename <label>", "Filename <Build>", "Filename <Modencode ID>", "Uniform filename", "Extensional Uniform filename", "factor", "Strain", "Cell Line", "Devstage", "Tissue", "other conditions", "PI", "GEO/SRA IDs", "Status"]
+     col_order = ["DCC id", "Title", "Data File", "Data Filepath", "Level 1 <organism>", "Level 2 <Target>", "Level 3 <Technique>", "Level 4 <File Format>", "Filename <Factor>", "Filename <Condition>", "Filename <Technique>", "Filename <ReplicateSetNum>", "Filename <ChIP>", "Filename <label>", "Filename <Build>", "Filename <Modencode ID>", "Uniform filename", "Extensional Uniform filename", "factor", "Strain", "Cell Line", "Devstage", "Tissue", "other conditions", "PI", "GEO/SRA IDs", "Status", "Sample Type", "OICR File Path"]
       col_index = Hash.new
       Formatter::format_files(exps, false, {}) { |cols|
         if header then #the header line only
@@ -606,78 +593,35 @@ return factors
     }
   end
 
+def self.format_read_counts (exps, filename = "read_counts.csv")   
+  File.open(filename, "w") { |f|    
+  header = true
+  col_order = ["Submission ID", "Project", "Assay", "Data Type", "Status", "Total Read Count", "PI"]                                                
+    col_index = Hash.new
+    colors = [ "#DDDDFF", "#DDDDDD" ] 
 
-  def self.format_amazon_bad(exps, filename = "amazon_tagging.csv")
-    filename = "amazon_tagging.csv" if filename.nil?
-    File.open(filename, "w") { |f|
-      header = true
-      i = 0
-      col_order = ["DCC id", "Title", "Data File", "Data Filepath", "Level 1 <organism>", "Level 2 <Target>", "Level 3 <Technique>", "Level 4 <File Format>", "Filename <Factor>", "Filename <Condition>", "Filename <Technique>", "Filename <ReplicateSetNum>", "Filename <ChIP>", "Filename <label>", "Filename <Build>", "Filename <Modencode ID>", "Uniform filename", "Extensional Uniform filename", "factor", "Strain", "Cell Line", "Devstage", "Tissue", "other conditions", "PI"]
-      col_index = Hash.new
-      Formatter::format_files(exps, true, {"Title" => "uniquename", "Filename <Factor>" => "antibody_targets", "factor" => "antibody_targets", "Growth Condition" => "growth_condition" }) { |cols|
-        if header then #the header line only
-          cols.each_index { |idx| col_index[cols[idx]] = idx}
-          f.puts col_order.join("\t")
-          header = false
-        else #the content of the file
-          i += 1
-          line = Array.new
-          col_order.each { |k| 
-            idx = col_index[k]
-            cols[idx] = cols[idx].to_s.gsub(/N\/A/, "") unless (idx.nil? || cols[idx].nil?)
-            cols[idx] = cols[idx].to_s.gsub(/^\s*|\s*$/, "") unless (idx.nil? || cols[idx].nil?)
-            id = cols[col_index["Submission ID"]]
-            if k == "DCC id" then
-              line.push "#{id}"
-            elsif k == "Filename <Modencode ID>" then
-              line.push "modENCODE_#{id}"
-            elsif k == "Level 1 <organism>" then
-              line.push cols[col_index["Organism"]] unless (idx.nil? || cols[idx].nil?)
-            elsif k == "Level 2 <Target>" then
-              line.push cols[col_index["Data Type"]] unless (idx.nil? || cols[idx].nil?)
-            elsif k == "Level 3 <Technique>" then
-              line.push cols[col_index["Assay"]] unless (idx.nil? || cols[idx].nil?)
-            #elsif k == "Filename <Factor>" then
-            #  factor = "antibody_targets"
-            #  if factor.empty? then
-            #    factor = "NOT ANTIBODY BASED"
-            #  end
-            #  line.push factor
-            #elsif k == ("Filename <Factor>" || "factor") then
-            #  line.push cols[col_index["Experimental Factor"]]
-            elsif k == "Filename <Condition>" then
-              line.push Formatter::slim_stages(cols[col_index["Stage/Treatment"]]) unless (idx.nil? || cols[idx].nil?)
-            elsif k ==  "Filename <Technique>" then
-              line.push cols[col_index["Assay"]] unless (idx.nil? || cols[idx].nil?)
-            elsif k == "Devstage" then
-              line.push Formatter::slim_stages(cols[col_index["Stage/Treatment"]]) unless (idx.nil? || cols[idx].nil?)
-            elsif k == "other conditions" then
-              treatments = Array.new
-              treatments.push "RNAiTarget_#{cols[col_index["RNAi Target"]]}" if cols[col_index["RNAi Target"]].length > 0 unless (idx.nil? || cols[idx].nil?)
-              treatments.push "GrowthCondition_#{cols[col_index["Growth Condition"]]}" if cols[col_index["Growth Condition"]].length > 0 unless (idx.nil? || cols[idx].nil?)
-              treatments.push "Compound_#{cols[col_index["Compound"]].gsub(/sodium chloride/, "NaCl")}" if !cols[col_index["Compound"]].empty?  unless (idx.nil? || cols[idx].nil?)
-              treatments.push "Temperature_#{cols[col_index["Temp"]]}" if cols[col_index["Temp"]].length > 0 unless (idx.nil? || cols[idx].nil?)
-              line.push treatments.map { |s| s.gsub(/, /, ",") }.join(";")
-
-#              line.push (col_index["Treatment"].nil? ? "" : cols[col_index["Treatment"]])
-            elsif k ==  "Cell Line" then
-              l, cols = Formatter::cleanup_cell_line(cols[col_index["Cell Line"]], cols, col_index) unless (idx.nil? || cols[idx].nil?)
-              line.push l.to_s 
-            elsif k == "PI" then
-              line.push cols[col_index["Project"]] unless (idx.nil? || cols[idx].nil?)
-            elsif ["Filename <ReplicateSetNum>","Filename <ChIP>", "Filename <label>","Filename <Build>","Uniform filename","Extensional Uniform filename"].include?(k) then
-              line.push "*"
-            elsif idx.nil? then
-              line.push ""
-            else
-              line.push cols[col_index[k]]
-            end
-          }
-          f.puts line.join("\t")
-        end
-      }
+    Formatter::format(exps, false, {}) { |cols|
+      if header then
+        cols.each_index { |idx| col_index[cols[idx]] = idx }
+        f.puts col_order.join("\t")
+        header = false
+      else
+        line = Array.new
+        col_order.each { |k|
+          idx = col_index[k]
+          cols[idx] = cols[idx].to_s.gsub(/N\/A/, "") unless (idx.nil? || cols[idx].nil?)
+          cols[idx] = cols[idx].to_s.gsub(/^\s*|\s*$/, "") unless (idx.nil? || cols[idx].nil?)
+          if idx.nil? then
+            line.push "*"
+          else
+            line.push cols[idx]
+          end
+        }
+        f.puts line.join("\t")
+      end
     }
-  end
+  }
+end
 
   def self.slim_stages (stage_list)     
     stage = stage_list

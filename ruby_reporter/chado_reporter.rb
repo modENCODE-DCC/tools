@@ -661,6 +661,17 @@ class ChadoReporter
     return filtered_antibodies
   end
 
+  def collect_labels(data, xschema)
+    filtered_labels = Array.new
+    labels = data.find_all { |d| d["type"] =~ /LabelCompound/ }
+    labels.each { |d|
+      attrs = self.get_attributes_for_datum(d["data_id"], xschema)
+      d["attributes"] = attrs
+      filtered_labels.push d
+    }
+    return filtered_labels
+  end
+
   def collect_compounds(data, xschema)
     filtered_compounds = Array.new
     compounds = data.find_all { |d| d["type"] =~ /MO:Compound/ }
@@ -704,17 +715,167 @@ class ChadoReporter
   end
 
   def collect_files(data, xschema)
-    file_types = ["Browser_Extensible_Data_Format 6 (BED6+3)", "Browser_Extensible_Data_Format (BED)", "Signal_Graph_File", "WIG", "CEL", "nimblegen_microarray_data_file (pair)", "agilent_raw_microarray_data_file (TXT)", "FASTQ", "SFF", "CSFASTA", "GFF3", "Sequence_Alignment/Map (SAM)", "Binary Sequence_Alignment/Map (BAM)"]
+    file_types = ["Browser_Extensible_Data_Format 6 (BED6+3)", "Browser_Extensible_Data_Format (BED)", "Signal_Graph_File", "WIG", "CEL", "nimblegen_microarray_data_file (pair)", "agilent_raw_microarray_data_file (TXT)", "raw_microarray_data_file", "image", "FASTQ", "SFF", "CSFASTA", "GFF3", "Sequence_Alignment/Map (SAM)", "Binary Sequence_Alignment/Map (BAM)"]
+    #note:  using "image" here as an output of a sequencing reaction
     filtered_files = Array.new
     files = data.find_all {|d| file_types.find_all{|t| d["type"] =~ /#{Regexp.escape(t)}/ }.length > 0 }
     files.each { |d|
+      print "-" ; $stdout.flush;
       attrs = self.get_attributes_for_datum(d["data_id"], xschema)
       d["attributes"] = attrs
       filtered_files.push d
-      
     }
-    filtered_files = filtered_files.uniq_by { |d| d["attributes"].nil? ? nil : d["attributes"] }
-    return filtered_files
+   return filtered_files
+  end 
+ 
+
+  def collect_samples_and_extracts(data, xschema)
+    stuff = Array.new
+    #first look and see if there is a "Sample" or "Replicate set" attribute in our data.  If so, return that
+    #gather a list of sample names pertinent for a datum
+    #check for a replicate set
+
+    if data.find { |s| s["attributes"] && s["attributes"].find { |a| a["name"] =~ /replicate(\s_)*(group|set)/ } } then
+      samples = data.map { |s| s["attributes"].find_all { |a| a["name"] =~ /replicate(\s_)*(group|set)/ } }
+    end
+    #check for sample names
+    if samples.nil? then
+      samples = data.find_all { |d| d["heading"] =~ /(Source|Sample)\s*Names?/i }
+      if !samples.find { |s| s["attributes"] } then
+        samples.each { |s| attrs = get_attributes_for_datum(s["data_id"], xschema); s["attributes"] = attrs }
+      end
+    end
+    stuff.push samples.map{|s| s["value"]}.uniq unless samples.nil?
+    stuff.compact!
+
+    if stuff.empty? then
+      #now, check to see if there's an Extract attribute
+      extracts = data.find_all { |d| d["heading"] =~ /extract\b/i || d["name"] =~ /extract\b/i }.reject { |d| d["value"] == nil || d["value"].empty? }
+      extracts.uniq_by { |d| [ d["heading"], d["name"] ] }.map { |d| [ d["heading"], d["name"] ] }.each { |unq|
+        unq = extracts.find_all { |d| d["heading"] == unq[0] && d["name"] == unq[1] }.map { |d| d["value"].sub(/ (Nucleosomes|Pull-down|Input)/, '').sub(/^(Extract|Control)\d$/, '\1').sub(/(_GEL|_BULK)$/, '') }.uniq.compact}
+      stuff.push extracts.map{|e| e["value"]}.uniq
+    end
+
+
+    if stuff.empty? then
+      stuff.push "NO REP INFO"      
+    end
+    return stuff.flatten.uniq.compact
+  end
+
+  def associate_sample_properties_with_files(data, file, xschema)
+    file_formats = { "raw-arrayfile" => ["CEL", "pair", "agilent", "raw_microarray_data_file"], "raw-seqfile" => ["FASTQ", "CSFASTA", "SFF"], "raw-other" => ["image"], "gene-model" => ["GFF3"], "WIG" => ["WIG", "Signal_Graph_File", "BED"], "alignment" => ["SAM", "BAM"] }
+      older_data = get_referenced_data_for_schema(xschema, file["name"], file["value"])
+
+      file["properties"] = {
+        "antibodies" => collect_antibodies(older_data, xschema),
+        "label" => collect_labels(older_data, xschema),
+        "rep" => collect_samples_and_extracts(older_data, xschema), #replicate number
+        "rep_num" => ["TBD"],
+        "GEO id" => "geo_id_tbd",
+        "SRA id" => "sra_id_tbd",
+        }
+
+      if file["properties"]["rep"] == "NO REP INFO" then
+        #do something?
+      end
+
+      print "~" ; $stdout.flush
+      return file
+  end
+
+#  def get_referenced_properties_and_data_for_schema(xschema, file["name"], file["value"])
+#    sth = @dbh.prepare("
+#      SELECT d.data_id, d.heading, d.name, d.value, cv.name || ':' || cvt.name AS type FROM #{schema}.data d
+#      INNER JOIN #{schema}.cvterm cvt ON d.type_id = cvt.cvterm_id
+#      INNER JOIN #{schema}.cv ON cvt.cv_id = cv.cv_id
+#      WHERE d.name = ? AND d.value = ?
+#      ")
+#    sth.execute(name, value)
+#    ret = sth.fetch_all.map { |row| row.to_h }
+#    sth.finish
+#    ret.clone.each do |row|
+#      older_data = self.get_older_data(schema, row["data_id"])
+#      while (older_data.size > 0)
+#        ret += older_data
+#        next if older_data["properties"]
+#
+#        older_ids = older_data.map { |d| d["data_id"] }
+#        older_data = Array.new
+#        older_ids.each { |oid|
+#          older_data += get_older_data(schema, oid)
+#        }
+#      end
+#
+#    end
+#    return ret
+#  end
+
+
+  def associate_sample_properties_with_files_recursively(data, files, rep, xschema) 
+    properties, older_data = get_referenced_properties_and_data_for_schema(xschema, file["name"], file["value"])
+    if !properties.nil? then
+      file["properties"] = properties
+    else  #if we are here, then I think we are at the root
+      file["properties"] = {
+        "antibodies" => collect_antibodies(older_data, xschema),
+        "label" => collect_labels(older_data, xschema),
+        "rep" => rep, #replicate number
+        "GEO id" => "geo_id_tbd",
+        "SRA id" => "sra_id_tbd"
+       }
+    end
+    return file
+  end
+
+
+
+  def collect_files2(data, xschema)
+    print "c"; $stdout.flush
+    file_types = ["Browser_Extensible_Data_Format 6 (BED6+3)", "Browser_Extensible_Data_Format (BED)", "Signal_Graph_File", "WIG", "CEL", "nimblegen_microarray_data_file (pair)", "agilent_raw_microarray_data_file (TXT)", "FASTQ", "SFF", "CSFASTA", "GFF3", "Sequence_Alignment/Map (SAM)", "Binary Sequence_Alignment/Map (BAM)"]
+    file_formats = { "raw-arrayfile" => ["CEL", "pair", "agilent", "raw_microarray_data_file"], "raw-seqfile" => ["FASTQ", "CSFASTA", "SFF"], "raw-other" => ["image"],
+            "gene-model" => ["GFF3"], "WIG" => ["WIG", "Signal_Graph_File", "BED"], "alignment" => ["SAM", "BAM"] }
+    filtered_files = Array.new
+    categorized_files = Hash.new
+    
+    #search through each of the file formats, and categorize the files by type
+    #the order here is optimized for traversing the graph for antibody retrieval
+    file_process_order = ["gene-model", "WIG", "alignment", "raw-arrayfile", "raw-seqfile", "raw-other"]
+    file_process_order.each { |fp| 
+      categorized_files[fp] = data.find_all { |d| file_formats[fp].find_all{ |t| d["type"] =~ /#{Regexp.escape(t)}/ }.length > 0 }
+    }  
+   
+      #TODO: don't forget about the case where there's an anonymous datum with no filename/value, so getting referenced data will 
+      #have to be by id or type rather than name/value
+      #for example, submission 834 has anonymous datum "image" type, each should have a different antibody.
+    file_process_order.each { |fp|
+      categorized_files[fp].each { |f|
+        if f["antibodies"].nil? then
+          older_data = get_referenced_data_for_schema(xschema, f["name"], f["value"])
+          older_files = collect_files(older_data, xschema)
+          if older_files.nil? then
+            f["antibodies"] = collect_antibodies(older_data, xschema)
+          else
+           #propagate the antibodies from the previous files to the current file
+           f["antibodies"] = older_files.map{|k,ofs| ofs.map{|of| of["antibodies"]}}.flatten
+          
+           #add the older file information into categorized files, so we don't repeatedly search for them
+           #update the categorized_files based on the data_id for each of the older_files
+           #older_files.each{|old_category,old_file_list|
+           #  old_file_list.each{|of|
+           #    #delete the datum that isn't updated
+           #    categorized_files[old_category].delete_if{|cf| cf["data_id"] == of["data_id"]}
+           #    #add the cleaned up datum that is updated
+           #    categorized_files[old_category].push of
+           #  }
+           #}
+          end
+        else
+          print "antibody found"; $stdout.flush
+        end
+      }
+    }
+    return categorized_files
   end 
 
   def collect_gff(schema)
