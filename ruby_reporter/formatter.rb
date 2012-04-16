@@ -108,7 +108,11 @@ class Formatter
              "Project",
              "Filename <ChIP>",
              "OICR File Path",
-             "Filename <label>"
+             "Filename <label>",
+             "Filename <ReplicateSetNum>",
+             "Replicate Names",
+             "GEO ids",
+             "SRA ids"
     ] + extra_cols.keys
 
     if block_given? then
@@ -124,27 +128,39 @@ class Formatter
       subid += " superseded by #{e["superseded"]}" if e["superseded"]
       e["status"] = "superseded" if e["superseded"]
       e["status"] = "deprecated" if e["deprecated"]
+      next if e["status"] != "released"
       files = e["files"]
       
       if files.nil? then
         files = [{"value" => "NO FILES FOUND", "type" => "" }]
       end
 
-      files.delete_if { |f| f["heading"] !~ /Result/ } unless files.nil?
+      if files.empty? then
+        files = [{"value" => "NO FILES FOUND", "type" => "" }]
+      end
+
+      files.delete_if { |f| f["heading"] !~ /Result|Array Data File|Anonymous/ } unless files.nil?
+
+      geo_ids = [e["GSE"]]
+      geo_ids += e["GSM"] unless e["GSM"].nil?
+      geo_ids += e["sra_ids"] unless e["sra_ids"].nil?
+      geo_ids = geo_ids.compact.uniq.reject { |id| id.empty? }.sort.join(", ")
+
 
       files.each do |f|
         #assume f is a hash, with name, path, type
         cols = Array.new
         cols.push "#{subid}"
         cols.push e["uniquename"]
-        f["value"] = "ANONYMOUS DATUM" if ((f["heading"] =~ /Anonymous/i))
+        f["value"] = "ANONYMOUS DATUM" if (f["heading"] =~ /Anonymous/i) && f["value"].nil?
+        #f["value"] = "ANONYMOUS DATUM" if ((f["heading"] =~ /Anonymous/i))
         cols.push File.basename(f["value"])
         cols.push f["value"]
 
         #reformat the file format/type
         format = f["type"]
         re_format = { "raw-arrayfile" => ["CEL", "pair", "agilent", "raw_microarray_data_file"], "raw-seqfile" => ["FASTQ", "CSFASTA", "SFF"],
-          "gene-model" => ["GFF3"], "WIG" => ["WIG", "Signal_Graph_File", "BED"], "alignment" => ["SAM", "BAM"] }
+          "raw-other" => ["image"], "gene-model" => ["GFF3"], "WIG" => ["WIG", "Signal_Graph_File", "BED"], "alignment" => ["SAM", "BAM"] }
         #missing:  TraceArchive_record, GEO_record, gene-model_txt (submission 3305)
         format = re_format.map{|newtype,origtypes| x = origtypes.find{|t| format =~ /#{t}/i}; x.nil? ? nil : "#{newtype}_#{x}" }.flatten.compact 
         cols.push format.nil? ? "" : format 
@@ -172,10 +188,7 @@ class Formatter
         cols.push e["rnai_targets"].join(", ")
         cols.push e["created_at"]
         cols.push((e["status"] == "released" || e["status"] == "published" || e["status"] == "deprecated" || e["status"] == "superseded") ? e["released_at"] : "")
-        geo_ids = [e["GSE"]]           
-        geo_ids += e["GSM"] unless e["GSM"].nil?
-        geo_ids += e["sra_ids"] unless e["sra_ids"].nil?
-        cols.push geo_ids.compact.uniq.reject { |id| id.empty? }.sort.join(", ")
+        cols.push geo_ids
         cols.push e["project"]
         cols.push f["sample_type"].nil? ? "" : f["sample_type"]
         if f["value"] =~ /^(http|ftp)/ then
@@ -186,6 +199,12 @@ class Formatter
         label = f["properties"].nil? ? "" : f["properties"]["label"].nil? ? "" : f["properties"]["label"].map{|l| l.nil? ? "" : l["value"]}.uniq.sort.join(",")
         #label = f["label"].nil? ? "" : f["label"].map{|l| l.nil? ? "NIL" : l["value"]}.uniq.join(",")
         cols.push label
+        repnum = ""
+        repnum += "#{f["properties"]["rep_num"].join(",")}" unless f["properties"].nil?
+        cols.push "#{repnum.nil? ? "UH OH" : repnum}"
+        cols.push "#{f["properties"].nil? ? "" : f["properties"]["rep"].join(",")}"
+        cols.push "#{f["properties"].nil? ? "" : f["properties"]["GEO id"].join(",")}"
+        cols.push "#{f["properties"].nil? ? "" : f["properties"]["SRA id"].join(",")}"
         extra_cols.values.each { |colname| cols.push e[colname] }
           
         if block_given? then
@@ -515,7 +534,7 @@ return factors
     File.open(filename, "w") { |f|
       header = true
       #col_order = ["DCC id", "Title", "Data File", "Data Filepath", "Level 1 <organism>", "Level 2 <Target>", "Level 3 <Technique>", "Level 4 <File Format>", "Filename <Factor>", "Filename <Condition>", "Filename <Technique>", "Filename <Modencode ID>", "factor", "Strain", "Cell Line", "Devstage", "Tissue", "other conditions", "PI", "GEO/SRA IDs", "Status"]
-     col_order = ["DCC id", "Title", "Data File", "Data Filepath", "Level 1 <organism>", "Level 2 <Target>", "Level 3 <Technique>", "Level 4 <File Format>", "Filename <Factor>", "Filename <Condition>", "Filename <Technique>", "Filename <ReplicateSetNum>", "Filename <ChIP>", "Filename <label>", "Filename <Build>", "Filename <Modencode ID>", "Uniform filename", "Extensional Uniform filename", "factor", "Strain", "Cell Line", "Devstage", "Tissue", "other conditions", "PI", "GEO/SRA IDs", "Status", "Sample Type", "OICR File Path"]
+     col_order = ["DCC id", "Title", "Data File", "OICR File Path", "Level 1 <organism>", "Level 2 <Target>", "Level 3 <Technique>", "Level 4 <File Format>", "Filename <Factor>", "Filename <Condition>", "Filename <Technique>", "Filename <ReplicateSetNum>", "Filename <ChIP>", "Filename <label>", "Filename <Build>", "Filename <Modencode ID>", "Uniform filename", "Extensional Uniform filename", "factor", "Strain", "Cell Line", "Devstage", "Tissue", "other conditions", "PI", "GEO/SRA IDs", "Status", "Sample Type", "Data Filepath", "Replicate Names", "GEO ids", "SRA ids"]
       col_index = Hash.new
       Formatter::format_files(exps, false, {}) { |cols|
         if header then #the header line only

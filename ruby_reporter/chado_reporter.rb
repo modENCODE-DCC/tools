@@ -232,6 +232,40 @@ class ChadoReporter
     return ret
   end
 
+  def get_sister_data_for_schema(schema, name, value)
+    #get the current datum, and find the other datums that are outputs of the same applied protocol
+    sth = @dbh.prepare("
+      SELECT d.data_id, d.heading, d.name, d.value FROM #{schema}.data d
+      INNER JOIN #{schema}.applied_protocol_data apd ON d.data_id = apd.data_id AND apd.direction = 'output'
+      INNER JOIN #{schema}.applied_protocol ap ON apd.applied_protocol_id = ap.applied_protocol_id
+      WHERE d.name = ? and d.value = ?
+    ")
+    sth.execute(name, value)
+    ret = sth.fetch_all.map { |row| row.to_h }
+    sth.finish
+    return ret
+   
+  end
+
+  def get_sister_data_for_schema_by_id(schema, id)
+    #get the current datum, and find the other datums that are outputs of the same applied protocol
+    sth = @dbh.prepare("
+      SELECT d.data_id, d.heading, d.name, d.value, cv.name || ':' || cvt.name AS type FROM #{schema}.data d
+      INNER JOIN #{schema}.cvterm cvt ON d.type_id = cvt.cvterm_id
+      INNER JOIN #{schema}.cv ON cvt.cv_id = cv.cv_id
+      INNER JOIN #{schema}.applied_protocol_data apd ON d.data_id = apd.data_id
+      INNER JOIN #{schema}.applied_protocol ap ON apd.applied_protocol_id = ap.applied_protocol_id
+      INNER JOIN #{schema}.applied_protocol_data apd_new ON ap.applied_protocol_id = apd_new.applied_protocol_id AND apd_new.direction = 'output'
+      WHERE apd_new.data_id = ?
+    ")
+    sth.execute(id)
+    ret = sth.fetch_all.map { |row| row.to_h }
+    sth.finish
+    return ret
+
+  end
+
+
   def get_referenced_data_for_schema(schema, name, value)
     sth = @dbh.prepare("
       SELECT d.data_id, d.heading, d.name, d.value, cv.name || ':' || cvt.name AS type FROM #{schema}.data d
@@ -288,6 +322,30 @@ class ChadoReporter
     sth.finish
     return ret
   end
+
+  def get_comments_attached_to_protocols(schema)
+    sth = @dbh.prepare("SELECT a.name, a.value, a.heading, a.attribute_id, ap.applied_protocol_id FROM #{schema}.attribute a
+                        INNER JOIN #{schema}.protocol_attribute pa ON a.attribute_id = pa.attribute_id
+                        INNER JOIN #{schema}.protocol p ON p.protocol_id = pa.protocol_id
+                        INNER JOIN #{schema}.applied_protocol ap ON p.protocol_id = ap.protocol_id
+                        WHERE a.heading = 'Comment'
+                       ")
+                        #INNER JOIN #{schema}.applied_protocol_data apd ON ap.applied_protocol_id = apd.applied_protocol_id AND apd.direction = 'output'
+    sth.execute()
+    ret = sth.fetch_all.map { |row| row.to_h }
+    sth.finish
+    return ret
+  end
+
+  def get_data_ids_for_applied_protocol_ids(applied_protocol_ids,schema)
+    sth = @dbh.prepare("SELECT apd.applied_protocol_id, apd.data_id FROM #{schema}.applied_protocol_data apd
+                        WHERE apd.applied_protocol_id = ANY(?) AND apd.direction = 'output'
+                       ")
+    sth.execute(applied_protocol_ids)
+    ret = sth.fetch_all.map{| row| row.to_h }
+    sth.finish
+    return ret
+end
 
   def get_applied_protocol_data_count(heading, name, schema)
     sth = @dbh.prepare("SELECT COUNT(apd.applied_protocol_data_id) FROM #{schema}.applied_protocol_data apd
@@ -727,26 +785,71 @@ class ChadoReporter
     }
    return filtered_files
   end 
- 
+
+  def associate_comments_to_datums(data, xschema)
+    comments = get_comments_attached_to_protocols(xschema)
+    comments.delete_if {|c| c["name"] !~ /replicate(\s|_)*(group|set)/i }
+    puts "filtered #{comments.length} comments"
+    if !(comments.nil? || comments.empty? ) then
+      apids = comments.map{|c| c["applied_protocol_id"]}
+      data_id_map = get_data_ids_for_applied_protocol_ids(apids,xschema)
+      puts data_id_map.pretty_inspect
+      data_id_map.each {|mapping|
+        d = data.find { |d| d["data_id"] == mapping["data_id"] }
+        if d.nil? then
+          puts "#{mapping["data_id"]} data id not found"
+        else
+          attrs = d["attributes"]
+          attrs = Array.new if attrs.nil?
+          #attach the comment, which is an attribute
+          #TODO: fetch the attribute from the database, and attach it here instead
+
+          attrs.push comments.find {|c| c["applied_protocol_id"] == mapping["applied_protocol_id"]}
+          d["attributes"] = attrs
+          puts d
+        end
+      }
+    end
+    return data
+  end 
 
   def collect_samples_and_extracts(data, xschema)
     stuff = Array.new
     #first look and see if there is a "Sample" or "Replicate set" attribute in our data.  If so, return that
     #gather a list of sample names pertinent for a datum
     #check for a replicate set
+    #may submissions have the replicate set/group as a comment on a protocol, rather than on the sample
+    #so, have to fetch any protocols that have a comment attached.  then, add that as an attibute of the datum output from that
+    #protocol, even if it is an anonymous datum
+    samples = Array.new
 
-    if data.find { |s| s["attributes"] && s["attributes"].find { |a| a["name"] =~ /replicate(\s_)*(group|set)/ } } then
-      samples = data.map { |s| s["attributes"].find_all { |a| a["name"] =~ /replicate(\s_)*(group|set)/ } }
+    if data.find { |s| s["attributes"] && s["attributes"].find { |a| a["name"] =~ /replicate(\s|_)*(group|set)/i } } then
+      samples = data.map { |s| s["attributes"].find_all { |a| a["name"] =~ /replicate(\s|_)*(group|set)/i } }
     end
+    #puts "found replicate group/set #{samples.pretty_inspect}" if !samples.empty?
+
     #check for sample names
-    if samples.nil? then
-      samples = data.find_all { |d| d["heading"] =~ /(Source|Sample)\s*Names?/i }
+    #this is kindof arbitrary
+    # Source > Hyb > Sample
+    #
+    samples = data.find_all { |d| d["heading"] =~ /(Source)\s*Names?/i } if samples.empty?
+    samples = data.find_all { |d| d["heading"] =~ /(Hybridization)\s*Names?/i } if samples.empty?
+    samples = data.find_all { |d| d["heading"] =~ /(Sample)\s*Names?/i } if samples.empty?
+
+
+    if !samples.empty? then
       if !samples.find { |s| s["attributes"] } then
         samples.each { |s| attrs = get_attributes_for_datum(s["data_id"], xschema); s["attributes"] = attrs }
       end
     end
-    stuff.push samples.map{|s| s["value"]}.uniq unless samples.nil?
+
+    #puts samples.pretty_inspect
+
+    stuff.push samples.map{|s| s["value"]}.uniq unless samples.empty?
+    stuff.flatten!
     stuff.compact!
+
+    #puts "found #{stuff.pretty_inspect} about the sample"
 
     if stuff.empty? then
       #now, check to see if there's an Extract attribute
@@ -755,7 +858,8 @@ class ChadoReporter
         unq = extracts.find_all { |d| d["heading"] == unq[0] && d["name"] == unq[1] }.map { |d| d["value"].sub(/ (Nucleosomes|Pull-down|Input)/, '').sub(/^(Extract|Control)\d$/, '\1').sub(/(_GEL|_BULK)$/, '') }.uniq.compact}
       stuff.push extracts.map{|e| e["value"]}.uniq
     end
-
+    stuff.flatten!
+    stuff.compact!
 
     if stuff.empty? then
       stuff.push "NO REP INFO"      
@@ -763,18 +867,77 @@ class ChadoReporter
     return stuff.flatten.uniq.compact
   end
 
+  def collect_sra_ids(data, xschema)
+    sra_ids = Array.new
+    sra_data = data.find_all { |d| d["type"] =~ /ShortReadArchive/ }
+    sra_data.each { |d|
+      attrs = self.get_attributes_for_datum(d["data_id"], xschema)
+      d["attributes"] = attrs
+      d["value"] = "MISSING_SRA_ID_#{d["data_id"]}" if d["value"].empty?
+      sra_ids.push d["value"]
+    }
+    return sra_ids.uniq
+  end
+
+  def collect_geo_ids(data, xschema)
+    geo_ids = Array.new
+    geo_data = data.find_all { |d| d["type"] =~ /GEO/ }
+    geo_data.each { |d|
+      attrs = self.get_attributes_for_datum(d["data_id"], xschema)
+      d["attributes"] = attrs
+      d["value"] = "MISSING_GEO_ID_#{d["data_id"]}" if d["value"].empty?
+      geo_ids.push d["value"]
+    }
+    return geo_ids.uniq
+  end
+
+  def associate_files_with_rep_ids(data, id, xschema)
+    #given any datum, follow the graph to find the files that result in the given datum
+    #sister datums are also applicable
+    item = data.find {|d| d["value"] == id}
+    puts item.pretty_inspect
+    older_data = Array.new
+    older_data.push get_referenced_data_for_schema(xschema, item["name"], item["value"])
+    older_data.flatten!
+    sister_data = Array.new
+    sister_data.push get_sister_data_for_schema(xschema, item["name"], item["value"])
+    sister_data.flatten!
+    files = collect_files(older_data, xschema)
+    puts "Found #{files.length} older files for #{id}"
+    files += collect_files(sister_data, xschema)
+    puts "Found #{files.length} total files for #{id}"
+    return files  
+  end
+    
+
   def associate_sample_properties_with_files(data, file, xschema)
     file_formats = { "raw-arrayfile" => ["CEL", "pair", "agilent", "raw_microarray_data_file"], "raw-seqfile" => ["FASTQ", "CSFASTA", "SFF"], "raw-other" => ["image"], "gene-model" => ["GFF3"], "WIG" => ["WIG", "Signal_Graph_File", "BED"], "alignment" => ["SAM", "BAM"] }
-      older_data = get_referenced_data_for_schema(xschema, file["name"], file["value"])
+     older_data = Array.new
 
-      file["properties"] = {
-        "antibodies" => collect_antibodies(older_data, xschema),
-        "label" => collect_labels(older_data, xschema),
-        "rep" => collect_samples_and_extracts(older_data, xschema), #replicate number
-        "rep_num" => ["TBD"],
-        "GEO id" => "geo_id_tbd",
-        "SRA id" => "sra_id_tbd",
-        }
+    older_data.push get_referenced_data_for_schema(xschema, file["name"], file["value"])
+    #get sister datums for this file
+    #they might be the SRA or GEO ids
+    sister_data = Array.new
+    sister_data.push get_sister_data_for_schema_by_id(xschema, file["data_id"])
+    sister_data.flatten!
+    #puts "Sister data count #{sister_data.length}"
+    #puts sister_data.pretty_inspect
+    #older_data.push recursively_find_referenced_specimens(xschema, data)
+    older_data.flatten!
+    file["properties"] = {
+      "antibodies" => collect_antibodies(older_data, xschema),
+      "label" => collect_labels(older_data, xschema),
+      "rep" => collect_samples_and_extracts(older_data, xschema), #replicate number
+      "rep_num" => ["TBD"],
+      "GEO id" => collect_geo_ids(older_data+sister_data, xschema),
+      "SRA id" => collect_sra_ids(older_data+sister_data, xschema)
+    }
+
+    if (file["heading"] =~ /Anonymous/i) then
+      type = file["type"].split(":")[1] 
+      file["value"] = "ANONYMOUS_DATUM_type_#{type}_id_#{file["data_id"]}"
+      #puts file.pretty_inspect
+    end
 
       if file["properties"]["rep"] == "NO REP INFO" then
         #do something?

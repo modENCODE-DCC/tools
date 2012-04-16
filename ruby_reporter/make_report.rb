@@ -21,6 +21,7 @@ require 'escape'
 
 DBI::DBD::Pg::Database::type_map_dir = File.dirname(__FILE__)
 MAKE_BREAKPOINTS = true #a simple flag to trigger making breakpoints
+HOME_DIR = "/modencode/raw/tools/reporter"
 
 module Enumerable
   def uniq_by
@@ -135,7 +136,7 @@ def is_histone_antibody(antibody)
 end
 
 def load_breakpoint(which_breakpoint)
-  breakpoint_file = "breakpoint#{which_breakpoint}.dmp"
+  breakpoint_file = File.join(HOME_DIR,"breakpoint#{which_breakpoint}.dmp")
   print "Loading breakpoint file #{breakpoint_file}..." ; $stdout.flush
   exps = Marshal.load(File.read(breakpoint_file))
   puts "Done."
@@ -146,7 +147,7 @@ end
 def write_breakpoint(which_breakpoint,exps)
   # Save the list of experiments so we can run this script again without regenerating it
   puts "#"*80
-  breakpoint_file = "breakpoint#{which_breakpoint}.dmp"
+  breakpoint_file = File.join(HOME_DIR,"breakpoint#{which_breakpoint}.dmp")
   print "Writing breakpoint file #{breakpoint_file}..." ; $stdout.flush
   File.open(breakpoint_file, 'w') { |f| Marshal.dump(exps, f) }
   puts "Done."
@@ -667,6 +668,7 @@ def process_specimens(exps, r)
         puts "Got: #{sra_ids.join(";")}"
         e["sra_ids"].push sra_ids
       end
+      e["sra_ids"].uniq!
       
       
       ###############
@@ -1241,17 +1243,36 @@ def associate_files_and_attributes(exps, r)
     get_properties_flag = (e["antibodies"].length > 0) ||
     (e["GSM"].length > 0 ) ||
     (e["labels"].length > 0)
+    get_properties_flag = true
     if (get_properties_flag) then
-      e["files"].select{ |f| f["heading"] =~ /Result|Array Data File/ }.each { |f|
-        f = r.associate_sample_properties_with_files(data, f, e["xschema"])        
+      rep_names_for_this_e = Array.new
+      e["files"].select{ |f| f["heading"] =~ /Result|Array Data File|Anonymous/ }.each { |f|
+        f = r.associate_sample_properties_with_files(data, f, e["xschema"])
+        rep_names_for_this_e.push f["properties"]["rep"]
       }
       counter += 1
+      rep_names_for_this_e.flatten!
+      rep_names_for_this_e.compact!
+      rep_names_for_this_e.uniq!
+      rep_counter = 0
+      rep_names_for_this_e.sort.each { |rep_name|
+        #assign the replicate number to the file based on the match between the rep name
+        rep_counter += 1
+        e["files"].find_all{|f| !f["properties"].nil?}.find_all {|f| f["properties"]["rep"].include?(rep_name)}.each{|f|
+          f["properties"]["rep_num"].push rep_counter
+          f["properties"]["rep_num"].delete("TBD")
+        }
+      }
+      #e["files"].select{ |f| f["heading"] =~ /Result|Array Data File/ }.each { |f|
+      #  f = r.associate_sample_properties_with_files(data, f, e["xschema"])        
+      #}
     else
       if e["experiment_types"].find {|et| et =~ /ChIP/} then
         puts "#{e["xschema"]} has no antibodies, and is a ChIP"
         e["files"].select{ |f| f["heading"] =~ /Result/ }.each { |f|
           #add empty array to antibodies, which will indicate a control
-          f["properties"] = { f["antibodies"] => Array.new }
+          #i don't think we should ever get here
+          f["properties"] = { "antibodies" => Array.new }
 
           #f["antibodies"] = Array.new
         }
@@ -1292,7 +1313,7 @@ def associate_files_and_attributes2(exps, r)
         #(e.g. if the file_type is "raw-arrayfile", select only those files that are CEL, pair, etc.)
         files = e["files"]
         files.select{ |f| 
-          f["heading"] =~ /Result|Array Data File/ }.select{ |f| 
+          f["heading"] =~ /Result|Array Data File|Anonymous/ }.select{ |f| 
           file_formats[file_type].find_all{ |t| f["type"] =~ /#{Regexp.escape(t)}/ }.length > 0 }.each { |f|
             #check to see if the antibodies, etc., have already been associated with this file
             if f["properties"].nil? then
@@ -1320,6 +1341,27 @@ def associate_files_and_attributes2(exps, r)
   puts "#{file_counter} files processed."
   return exps
 end            
+
+def get_GEO_ids_from_files(exps)
+  print "Getting GEO and SRA ids from files..."; $stdout.flush
+  ids = Array.new
+  exps.each { |e|
+    print "." ; $stdout.flush
+    files = e["files"]
+    files.each { |f|
+      ids = f["properties"]["GEO id"] if f["properties"]
+      e["GSM"] += ids
+      ids = f["properties"]["SRA id"] if f["properties"]
+      e["sra_ids"] += ids
+    }
+    e["GSM"].flatten!
+    e["sra_ids"].flatten!
+  }
+  puts "Done."
+  return exps
+end
+
+
 
 def get_sample_types_for_IP_experiments(exps, r) 
   print "Determining sample types for IP experiments." ; $stdout.flush
@@ -1708,37 +1750,37 @@ dbh = DBI.connect(dbinfo[:dsn], dbinfo[:user], dbinfo[:password])
 
 #check for breakpoints, and then load them if found.  otherwise, continue where we left off
 
-if (File.exists?('breakpoint10.dmp')) then
+if (File.exists?(File.join(HOME_DIR, 'breakpoint10.dmp'))) then
   exps = load_breakpoint(10)
   else
-  if (File.exists?('breakpoint9.dmp')) then
+  if (File.exists?(File.join(HOME_DIR,'breakpoint9.dmp'))) then
     exps = load_breakpoint(9)
     else
-    if (File.exists?('breakpoint8.dmp')) then
+    if (File.exists?(File.join(HOME_DIR,'breakpoint8.dmp'))) then
       exps = load_breakpoint(8)
       else
-      if (File.exists?('breakpoint7.dmp')) then
+      if (File.exists?(File.join(HOME_DIR,'breakpoint7.dmp'))) then
         exps = load_breakpoint(7)
         else
-        if (File.exists?('breakpoint6.dmp')) then
+        if (File.exists?(File.join(HOME_DIR,'breakpoint6.dmp'))) then
           exps = load_breakpoint(6)
           else
-          if (File.exists?('breakpoint5.dmp')) then
+          if (File.exists?(File.join(HOME_DIR,'breakpoint5.dmp'))) then
             exps = load_breakpoint(5)
             else
-            if (File.exists?('breakpoint4.dmp')) then
+            if (File.exists?(File.join(HOME_DIR,'breakpoint4.dmp'))) then
               exps = load_breakpoint(4)
               else
-              if (File.exists?('breakpoint3.dmp')) then
+              if (File.exists?(File.join(HOME_DIR,'breakpoint3.dmp'))) then
                 exps = load_breakpoint(3)
                 else
-                if (File.exists?('breakpoint2.dmp')) then
+                if (File.exists?(File.join(HOME_DIR,'breakpoint2.dmp'))) then
                   exps = load_breakpoint(2)
                   else
-                  if (File.exists?('breakpoint1.dmp')) then
+                  if (File.exists?(File.join(HOME_DIR,'breakpoint1.dmp'))) then
                     exps = load_breakpoint(1)
                     else
-                    if (File.exists?('breakpoint0.dmp')) then
+                    if (File.exists?(File.join(HOME_DIR,'breakpoint0.dmp'))) then
                       exps = load_breakpoint(0)
                       else
                       print "Getting experiments" ; $stdout.flush
@@ -1789,6 +1831,7 @@ if (File.exists?('breakpoint10.dmp')) then
       write_breakpoint(8,exps) if MAKE_BREAKPOINTS
     end #breakpoint8 (get file attributes)
     
+    exps = get_GEO_ids_from_files(exps)
     exps = get_sample_types_for_IP_experiments(exps, r)
     exps = get_feature_counts_for_CAGE_or_cDNA_experiments(exps, r)
     exps = get_RNAsize_information(exps,r)
