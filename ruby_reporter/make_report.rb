@@ -5,6 +5,7 @@ $:.unshift(File.dirname(__FILE__))
 require 'rubygems'
 require 'cgi'
 require 'yaml'
+require 'getoptlong'
 patch_file = File.join(File.dirname(__FILE__), "dbi_patch.rb")
 if File.exists?(patch_file) then
   require 'dbi_patch.rb'
@@ -21,6 +22,8 @@ require 'escape'
 
 DBI::DBD::Pg::Database::type_map_dir = File.dirname(__FILE__)
 MAKE_BREAKPOINTS = true #a simple flag to trigger making breakpoints
+USE_PREVIOUS_RUN = true
+CHECK_CHANGES_AGAINST_PREVIOUS_RUN = true #false
 HOME_DIR = "/modencode/raw/tools/reporter"
 
 module Enumerable
@@ -53,8 +56,70 @@ def pipeline_database
   end
 end
 
+def check_for_changes_to_projects_in_pipeline (old_exps, old_date, dbh)
+  changed_project_ids = []
+  unchanged_exps = Array.new
+  print "Checking for changes to projects in pipeline since #{old_date.strftime("%F")}..."
+  sth = dbh.prepare("SELECT status, deprecated_project_id, superseded_project_id, created_at, updated_at FROM projects WHERE id = ?")
+  changed_exps = old_exps.clone
+  old_exps.clone.each { |e|
+    print "." ; $stdout.flush
+    pipeline_id = e["xschema"].match(/_(\d+)_/)[1].to_i
+    sth.execute(pipeline_id)
+    (status, deprecated, superseded, created_at, updated_at) = sth.fetch_array
+    if status.nil? then
+      # Chado entry, but deleted from pipeline
+      changed_exps.delete(e)
+      next
+    end
+    if (Time.parse(updated_at) < old_date) then
+      changed_exps.delete(e)
+    end
+  }
+  sth.finish
+  puts "Done."
+  changed_project_ids = changed_exps.map{|e| subid = e["xschema"].match(/_(\d+)_/)[1].to_i}
+  puts "Found #{changed_exps.length} changes for the following submissions: #{changed_project_ids.join(",")}."
+  return changed_project_ids
+end
+
+def check_changes_to_chadoxml(old_exps,old_date)
+  #just in case a chadoxml file was updated in the filesystem, but the 
+  #pipeline wasn't touched
+  changed_chadoxml_ids = [416]
+  changed_exps = old_exps.clone
+  print "Checking for changes to chadoxml files since #{old_date.strftime("%F")}..."
+  old_exps.clone.each { |e|
+    print "." ; $stdout.flush
+    pipeline_id = e["xschema"].match(/_(\d+)_/)[1].to_i
+    chadofile = File.join("/modencode/raw/data/", pipeline_id.to_s, "extracted", "#{pipeline_id.to_s}.chadoxml")
+    if File.exist?(chadofile) then
+      if (File.mtime(chadofile) < old_date) then
+        changed_exps.delete(e)
+      end
+    else
+      #if there's no chadoxml file, then i don't really care.  if it was present previously, and now it's not,
+      #then it should only be the case if new validates were run and failed, which should
+      #be picked up in the other methods check_for_changes_to_projects_in_pipeline
+      #so they can be deleted from this set
+      changed_exps.delete(e)
+    end
+  }
+  puts "Done."
+  changed_chadoxml_ids = changed_exps.map{|e| subid = e["xschema"].match(/_(\d+)_/)[1].to_i}
+  puts "Found #{changed_exps.length} changes for the following submissions: #{changed_chadoxml_ids.join(",")}."
+  return changed_chadoxml_ids
+end
+
+def get_most_recent_breakpoint_dir()
+  breakpoint_dirs = Dir.foreach(HOME_DIR).select{|x| x.match(/bps/)}
+  return breakpoint_dirs.select{|x| File.exist?(File.join(x,"breakpoint10.dmp"))}.sort{|x,y| File.mtime(x) <=> File.mtime(y)}.last
+end
+
+
+
 def get_geo_ids_from_NCBI(exps)
-	print "Getting GEO IDs from NCBI"
+	print "Getting GEO IDs from NCBI... " ; $stdout.flush
 	# Get GEO IDs from NCBI
 	eutil = Eutils.new
 	eutil_result = eutil.esearch("modencode_submission_*")
@@ -65,7 +130,8 @@ def get_geo_ids_from_NCBI(exps)
 	eutil_result2 = eutil.esummary(nil, eutil_result[0], eutil_result[1])
 	got_summaries = REXML::XPath.match(eutil_result2.elements["eSummaryResult"], "DocSum/Item[@Name='summary']")
 	puts "#{got_summaries.length} GEO entries found"
-	puts "Assigning GEO IDs to experiments"
+	print "Assigning GEO IDs to experiments..."
+        unmatched_summaries=Array.new
 	got_summaries.each { |summary_element|
 		print "." ; $stdout.flush
 		this_docsum = summary_element.parent
@@ -75,13 +141,15 @@ def get_geo_ids_from_NCBI(exps)
 			e["xschema"].match(/modencode_experiment_(\d+)_data/)[1].to_i == summary_element.text.match(/modencode_submission_(\d+)[^\d]/i)[1].to_i
 		}
 		if this_exp.nil? then
-			puts "Couldn't find experiment matching summary #{summary_element.text}"
-			next
+                  unmatched_summaries += [summary_element.text.match(/modencode_submission_(\d+)[^\d]/i)[1].to_i]
+		  #puts "Couldn't find experiment matching summary #{summary_element.text}"
+	       	  next
 		end
 		this_exp["GSE"] = gse
 		this_exp["GSM"] = gsm
 	}
 	puts "  Done."
+        puts "Unmatched summaries between GEO and these exps: #{unmatched_summaries.join(",")}"
   return exps
 end
 
@@ -90,7 +158,7 @@ def get_feature_types(exps)
   # generate a list of "nice" type names. For instance, types containing
   # "intron", "exon", "start_codon", "stop_codon" are all categorized as
   # "splice sites"
-  print "Feature types..."
+  print "Feature types..." ; $stdout.flush
   exps.each { |e|
     nice_types = r.get_nice_types(e["types"])
     if nice_types.size == 0 then
@@ -135,14 +203,34 @@ def is_histone_antibody(antibody)
   return false
 end
 
-def load_breakpoint(which_breakpoint)
-  breakpoint_file = File.join(HOME_DIR,"breakpoint#{which_breakpoint}.dmp")
-  print "Loading breakpoint file #{breakpoint_file}..." ; $stdout.flush
-  exps = Marshal.load(File.read(breakpoint_file))
-  puts "Done."
-  puts "Loaded #{exps.length} submissions."
+def load_breakpoint_file(breakpoint_file)
+  if !File.exist?(breakpoint_file)
+    puts "#{breakpoint_file} does not exist"
+    exit
+  else
+    print "Loading breakpoint file #{breakpoint_file}..." ; $stdout.flush
+    exps = Marshal.load(File.read(breakpoint_file))
+    puts "Done."
+    puts "Loaded #{exps.length} submissions."
+  end
   return exps
 end
+
+def load_breakpoint(which_breakpoint, breakpoint_file_path='.')
+  breakpoint_file = "breakpoint#{which_breakpoint}.dmp"
+  breakpoint_file = File.join(HOME_DIR,breakpoint_file_path, breakpoint_file)
+  exps = load_breakpoint_file(breakpoint_file)
+  return exps
+end
+
+#def load_breakpoint(which_breakpoint, breakpoint_file_path=".")
+#  breakpoint_file = File.join(HOME_DIR,"breakpoint#{which_breakpoint}.dmp")
+#  print "Loading breakpoint file #{breakpoint_file}..." ; $stdout.flush
+#  exps = Marshal.load(File.read(breakpoint_file))
+#  puts "Done."
+#  puts "Loaded #{exps.length} submissions."
+#  return exps
+#end
 
 def write_breakpoint(which_breakpoint,exps)
   # Save the list of experiments so we can run this script again without regenerating it
@@ -159,7 +247,6 @@ def select_testing_experiments(exps)
   puts "Selected #{exps.length} submissions for testing: #{testing_ids.join(",")}"
   return exps
 end
-
 
 def get_submission_status (exps, dbh)
   # Throw out any deprecated or unreleased projects; look up the status in the pipeline
@@ -1192,7 +1279,7 @@ def clean_up_antibody_targets(e)
 end
 
 def process_antibodies_for_experiments(exps, r)
-  print "Collecting antibody information" ; $stdout.flush
+  print "Collecting antibody information..." ; $stdout.flush
   # Search through all of the antibody data to try to find antibody names
   exps.each { |e|
     e = get_antibody_target_and_name(e)
@@ -1361,7 +1448,58 @@ def get_GEO_ids_from_files(exps)
   return exps
 end
 
-
+def get_genome_build(exps)
+  print "Getting genome builds from species..."; $stdout.flush
+  #hard coded for now.  will take from chado directly when updated
+  exps.each{ |e|
+    print "." ; $stdout.flush
+    #figure out the species from the specimens, because this is not how it is 
+    #determined in the pipeline, but should be
+    e["species"] = Array.new
+    species_list = e["specimens"].map{ |sp| sp["attributes"].select { |a| a["heading"] =~ /species|organism/i }.map{|a| a["value"] }}.flatten.uniq
+    e["species"] = species_list
+    #cleanup
+    e["species"].delete_if{|s| s =~ /sapiens|None|Other|unknown/}
+    e["species"] = e["species"].map{|s| s.gsub("D.", "Drosophila") }
+    e["species"] = e["species"].map{|s| s.gsub("C.", "Caenorhabditis") }
+    e["species"] = e["species"].map{|s| s =~ /pseudoobscura/ ? "Drosophila pseudoobscura pseudoobscura" : s}
+    e["species"].uniq!
+    #puts "Found species #{e["species"].pretty_inspect} for #{e["xschema"]}"
+    if (e["species"].length == 1) then
+      e["build"] = "WormBase WS220" if !e["species"].select{ |s| s =~ /elegans/ }.empty?
+      e["build"] = "WormBase WS227" if !e["species"].select{ |s| s =~ /brenneri/ }.empty?
+      e["build"] = "WormBase WS225" if !e["species"].select{ |s| s =~ /briggsae/ }.empty?
+      e["build"] = "WormBase WS227" if !e["species"].select{ |s| s =~ /japonica/ }.empty?
+      e["build"] = "WormBase WS225" if !e["species"].select{ |s| s =~ /remanei/ }.empty?
+      e["build"] = "FlyBase r5" if !e["species"].select{ |s| s =~ /melanogaster/ }.empty?
+      e["build"] = "FlyBase r1.3" if !e["species"].select{ |s| s =~ /simulans/ }.empty?
+      e["build"] = "FlyBase r2.6" if !e["species"].select{ |s| s =~ /pseudoobscura/ }.empty?
+      e["build"] = "FlyBase r1.2" if !e["species"].select{ |s| s =~ /virilis/ }.empty?
+      e["build"] = "FlyBase r1.3" if !e["species"].select{ |s| s =~ /mojavensis/ }.empty?
+      e["build"] = "FlyBase r1.3" if !e["species"].select{ |s| s =~ /yakuba/ }.empty?
+      e["build"] = "FlyBase r1.3" if !e["species"].select{ |s| s =~ /ananassae/ }.empty?
+    elsif (e["species"].length > 1) then
+      e["build"] = "Multiple species"
+    else
+      #figure out the build from the organism, which is the organism properly in chado
+      e["build"] = "Unknown"
+      e["build"] = "WormBase WS220" if e["organisms"].map{|o| o["species"]}.include? "elegans"
+      e["build"] = "WormBase WS227" if e["organisms"].map{|o| o["species"]}.include? "brenneri"
+      e["build"] = "WormBase WS225" if e["organisms"].map{|o| o["species"]}.include? "briggsae"
+      e["build"] = "WormBase WS227" if e["organisms"].map{|o| o["species"]}.include? "japonica"
+      e["build"] = "WormBase WS225" if e["organisms"].map{|o| o["species"]}.include? "remanei"
+      e["build"] = "FlyBase r5" if e["organisms"].map{|o| o["species"]}.include? "melanogaster"
+      e["build"] = "FlyBase r1.3" if e["organisms"].map{|o| o["species"]}.include? "simulans"
+      e["build"] = "FlyBase r2.6" if e["organisms"].map{|o| o["species"]}.include? "pseudoobscura pseudoobscura"
+      e["build"] = "FlyBase r1.2" if e["organisms"].map{|o| o["species"]}.include? "virilis"
+      e["build"] = "FlyBase r1.3" if e["organisms"].map{|o| o["species"]}.include? "mojavensis"
+      e["build"] = "FlyBase r1.3" if e["organisms"].map{|o| o["species"]}.include? "yakuba"
+      e["build"] = "FlyBase r1.3" if e["organisms"].map{|o| o["species"]}.include? "ananassae"
+    end
+  }
+  puts "Done."
+  return exps
+end
 
 def get_sample_types_for_IP_experiments(exps, r) 
   print "Determining sample types for IP experiments." ; $stdout.flush
@@ -1405,7 +1543,7 @@ def get_sample_types_for_IP_experiments(exps, r)
 end
 
 def get_feature_counts_for_CAGE_or_cDNA_experiments(exps, r)
-  puts "Getting sequence counts" ; $stdout.flush
+  print "Getting sequence counts..." ; $stdout.flush
   exps.each { |e|
     if e["experiment_types"].include?("CAGE") then
       # Line count of SAM file
@@ -1435,7 +1573,7 @@ end
 
 def get_RNAsize_information(exps,r)
   # Get RNAsize
-  puts "Collecting RNAsize information" ; $stdout.flush
+  print "Collecting RNAsize information" ; $stdout.flush
   exps.each { |e|
     print "."; $stdout.flush
     e["rna_size"] = r.get_rnasize(e["xschema"])
@@ -1446,7 +1584,7 @@ end
 
 def get_biological_validation_info(exps, r)
   # Figure out if it's a biological_validation_design experiment
-  puts "Collecting biological_validation_design information" ; $stdout.flush
+  print "Collecting biological_validation_design information..." ; $stdout.flush
   exps.each { |e|
     designs = r.get_experimental_designs(e["xschema"])
     if designs.include?("biological_validation_design") then
@@ -1455,6 +1593,7 @@ def get_biological_validation_info(exps, r)
       e["biological_validation"] = ""
     end
   }
+  puts "Done."
   return exps
 end
 
@@ -1730,12 +1869,211 @@ def clean_up_labels(exps)
   return exps
 end
 
+def do_everything_to_update_exps (exps,r,dbh)
+  puts "Doing everything to update #{exps.length} exps without writing interim breakpoints..."
+  exps = get_geo_ids_from_NCBI(exps)
+  exps = get_organisms(exps, r)
+  exps = get_read_counts(exps, r)
+  exps = get_reagents(exps, r)  #this can take awhile              
+  exps = get_project_and_lab(exps, r)            
+  exps = get_protocol_types(exps, r)          
+  exps = get_specimens_in_referenced_submissions(exps, r)
+  exps = process_specimens(exps,r)
+  exps = get_dnase_treatments(exps)
+  exps = get_geo_ids_from_chado(exps,r)
+  exps = get_experiment_types(exps, r)
+  exps = process_antibodies_for_experiments(exps,r)
+  exps = get_submission_status(exps, dbh)
+  puts "#{exps.size} total projects in Chado processed"
+
+  exps = get_microarray_sizes(exps)
+  exps = collect_files_for_experiments(exps,r)
+  exps = get_root_file_paths(exps)
+  exps = associate_files_and_attributes(exps, r)  #this can take awhile
+  exps = get_GEO_ids_from_files(exps)
+  exps = get_sample_types_for_IP_experiments(exps, r)
+  exps = get_feature_counts_for_CAGE_or_cDNA_experiments(exps, r)
+  exps = get_RNAsize_information(exps,r)
+
+  exps = get_biological_validation_info(exps, r)
+  exps = get_genome_build(exps)
+  #exps = get_submissions_not_in_chado(exps,r,dbh)
+  exps = figure_out_project_version(exps,r)
+  exps = get_reaction_count_for_RACE_RTPCR_experiments(exps,r)
+  exps = get_missing_metadata_for_deprecated_experiments(exps,r)
+  exps = get_replicate_count_for_experiments(exps,r)
+  exps = clean_up_labels(exps)
+
+  puts "Done with everything."
+  return exps
+end
+
+def print_help
+  puts <<-EOF
+
+  ./make_report.rb [OPTIONS] <report_style> <out_file>
+
+  DEFAULTS:
+  *this will print a tab-delimited report, nih-csv.
+  *breakpoints will be used, if found in the root directory of this program
+  *otherwise, the new report will use the previous report as a 
+   starting point, and update it based on those submissions that have
+   changes since.
+
+  OPTIONS:
+  -h, --help:  show this help
+  -f, --full:  run the full report, without using breakpoints.  if not 
+               included, it will load the most recent report and update 
+               changes.
+  -b, --use_breakpoint [FILE]: use breakpoints.  FILE indicates a specific 
+               breakpoint file to load.  will default to looking for one in 
+               the current dir. if used, it will not compare to other 
+               versions.
+  -c, --compare_to [DIR]: DIR indicates a previous run with which to 
+               use as the basis of comparison.  will be the most-recent.
+               incompatible with --full.
+  EOF
+
+end
+
+def report_by_comparison (r, dbh, user_specified_comparison_dir) 
+  puts "Generating report by comparison"
+  old_exps = Array.new
+  #get the most recent breakpoint location
+  if user_specified_comparison_dir != "" then
+    previous_breakpoint_dir = user_specified_comparison_dir
+    puts "Using user-specified directory for comparison: #{user_specified_comparison_dir}"
+  else
+    previous_breakpoint_dir = get_most_recent_breakpoint_dir()
+  end
+  dm=previous_breakpoint_dir.match(/bps.(\d{4})-(\d\d)-(\d\d)/)
+  #parse the date
+  if dm && dm.length then
+    #there's a breakpoint directory!
+    previous_breakpoint_date=Time.local(dm[1], dm[2], dm[3]) if dm && dm.length
+    puts "Found it:  #{previous_breakpoint_date.strftime("%F")}"
+    old_exps = load_breakpoint(10, previous_breakpoint_dir)
+    changed_project_ids = check_for_changes_to_projects_in_pipeline(old_exps, previous_breakpoint_date, dbh)
+    changed_chadoxml_ids = check_changes_to_chadoxml(old_exps, previous_breakpoint_date)
+    all_changed_project_ids = (changed_project_ids + changed_chadoxml_ids).uniq
+    puts "Found #{all_changed_project_ids.length} submissions with changes."
+
+  old_exp_ids = old_exps.map{|e| e["xschema"].match(/_(\d+)_/)[1].to_i }
+
+  #get the list of experiments in chado with bare bones details
+  avail_exps = r.get_available_experiments
+  avail_exp_ids = avail_exps.map{|e| e["xschema"].match(/_(\d+)_/)[1].to_i }
+  puts "Found #{avail_exps.length} experiments in chado"
+
+  #compare the avail_exps with the old_exps to see what additional things we need to fetch
+  puts "new exp ids: #{(avail_exp_ids - old_exp_ids).join(",")} out of #{avail_exp_ids.length} avail exps"
+
+  unchanged_exps = old_exps.clone
+  changed_project_ids.map{|id|
+    unchanged_exps.delete_if{|e| e["xschema"].match(/_(\d+)_/)[1].to_i == id}
+  }
+
+  puts "Setting aside #{unchanged_exps.length} unchanged submissions since #{previous_breakpoint_date.strftime("%F")} to merge."
+
+  #project_ids_to_update = (changed_project_ids+(avail_exp_ids - old_exp_ids)).uniq
+  project_ids_to_update = changed_project_ids.uniq
+
+  puts "Updating #{project_ids_to_update.length} submissions: #{project_ids_to_update.sort.join(",")}"
+
+
+  #select the experiments from those available that have changed since last time
+  changed_exps = Array.new
+  project_ids_to_update.map{|id|
+    changed_exps += [avail_exps.find{|e| e["xschema"].match(/_(\d+)_/)[1].to_i == id}]
+  }
+  changed_exps.compact!
+
+  print "Getting feature types for #{changed_exps.length} submissions"
+  changed_exps.each do |experiment|
+    print "."; $stdout.flush
+    experiment["types"] = r.get_feature_types(experiment["xschema"])
+  end
+  puts "Done."
+
+  changed_exps.delete_if { |e|
+    # Ignore schema 0
+    e["xschema"] =~ /^modencode_experiment_(0)_data$/ #||
+  }
+
+  exps = do_everything_to_update_exps(changed_exps,r,dbh)
+  #do all the other stuff to changed_exps
+  #merge back with unchanged_exps
+  exps += unchanged_exps
+
+  #well, this is really getting only new submissions in the pipeline that weren't in the previous run
+  exps = get_submissions_not_in_chado(exps,r,dbh)
+
+  puts "Final submission count:  #{exps.length}"
+
+  else
+    puts "Can't find previous breakpoint file. Will run a fresh copy."
+  end
+
+  return exps
+
+end
+
+
+#############################
+#     COMMAND ARGUMENTS     #
+#############################
+
+opts = GetoptLong.new(
+  [ '--full', '-f', GetoptLong::NO_ARGUMENT],
+  [ '--compare_to', '-c', GetoptLong::OPTIONAL_ARGUMENT],
+  [ '--use-breakpoint', '-b', GetoptLong::OPTIONAL_ARGUMENT],
+  [ '--help', '-h', GetoptLong::NO_ARGUMENT ]
+)
+
+run_full_report = false
+compare_to_previous_run = true
+use_breakpoint = true
+user_specified_breakpoint_file = ""
+user_specified_comparison_dir = ""
+
+opts.each do |opt, arg|
+  case opt
+    when '--help'
+      print_help()
+      #RDoc::usage
+      exit
+    when '--full'
+      run_full_report = true
+      compare_to_previous_run = false
+      use_breakpoint = false
+    when '--use-breakpoint'
+      if !arg.empty?
+        user_specified_breakpoint_file = arg
+        if !File.exist?(user_specified_breakpoint_file) then
+          puts "File #{user_specified_breakpoint_file} doesn't exist.  Exiting."
+          exit
+        end
+      end
+      compare_to_previous_run = false
+    when '--compare_to'
+      if !arg.empty?
+        user_specified_comparison_dir = arg
+        if !File.exist?(user_specified_comparison_dir) then
+          puts "File #{user_specified_breakpoint_file} doesn't exist.  Exiting."
+          exit
+        end
+      end
+         
+      compare_to_previous_run = true
+      use_breakpoint = false
+    end
+end
 
 #############################
 #        INITIALIZE         #
 #############################
 
-puts "Initializing reporter"
+puts "Initializing reporter..."
 r = ChadoReporter.new
 r.set_schema("reporting")
 
@@ -1748,109 +2086,124 @@ dbh = DBI.connect(dbinfo[:dsn], dbinfo[:user], dbinfo[:password])
 #           MAIN            #
 #############################
 
-#check for breakpoints, and then load them if found.  otherwise, continue where we left off
 
-if (File.exists?(File.join(HOME_DIR, 'breakpoint10.dmp'))) then
-  exps = load_breakpoint(10)
+if compare_to_previous_run then
+  exps = report_by_comparison(r, dbh, user_specified_comparison_dir)
+  if (exps.length==0)
+    #run the full report, if the comparison returns nothing
+    run_full_report = true
   else
-  if (File.exists?(File.join(HOME_DIR,'breakpoint9.dmp'))) then
-    exps = load_breakpoint(9)
+    write_breakpoint(10,exps) if MAKE_BREAKPOINTS
+  end 
+else
+  #check for breakpoints, and then load them if found.  otherwise, continue where we left off
+
+  if user_specified_breakpoint_file != "" then 
+    exps = load_breakpoint_file(user_specified_breakpoint_file)
+  else
+
+    if (File.exists?(File.join(HOME_DIR, 'breakpoint10.dmp')) && !run_full_report) then
+      exps = load_breakpoint(10)
     else
-    if (File.exists?(File.join(HOME_DIR,'breakpoint8.dmp'))) then
-      exps = load_breakpoint(8)
+      if (File.exists?(File.join(HOME_DIR,'breakpoint9.dmp')) && !run_full_report) then
+        exps = load_breakpoint(9)
       else
-      if (File.exists?(File.join(HOME_DIR,'breakpoint7.dmp'))) then
-        exps = load_breakpoint(7)
+        if (File.exists?(File.join(HOME_DIR,'breakpoint8.dmp')) && !run_full_report) then
+          exps = load_breakpoint(8)
         else
-        if (File.exists?(File.join(HOME_DIR,'breakpoint6.dmp'))) then
-          exps = load_breakpoint(6)
+          if (File.exists?(File.join(HOME_DIR,'breakpoint7.dmp')) && !run_full_report) then
+            exps = load_breakpoint(7)
           else
-          if (File.exists?(File.join(HOME_DIR,'breakpoint5.dmp'))) then
-            exps = load_breakpoint(5)
+            if (File.exists?(File.join(HOME_DIR,'breakpoint6.dmp')) && !run_full_report) then
+              exps = load_breakpoint(6)
             else
-            if (File.exists?(File.join(HOME_DIR,'breakpoint4.dmp'))) then
-              exps = load_breakpoint(4)
+              if (File.exists?(File.join(HOME_DIR,'breakpoint5.dmp')) && !run_full_report) then
+                exps = load_breakpoint(5)
               else
-              if (File.exists?(File.join(HOME_DIR,'breakpoint3.dmp'))) then
-                exps = load_breakpoint(3)
+                if (File.exists?(File.join(HOME_DIR,'breakpoint4.dmp')) && !run_full_report) then
+                  exps = load_breakpoint(4)
                 else
-                if (File.exists?(File.join(HOME_DIR,'breakpoint2.dmp'))) then
-                  exps = load_breakpoint(2)
+                  if (File.exists?(File.join(HOME_DIR,'breakpoint3.dmp')) && !run_full_report) then
+                    exps = load_breakpoint(3)
                   else
-                  if (File.exists?(File.join(HOME_DIR,'breakpoint1.dmp'))) then
-                    exps = load_breakpoint(1)
+                    if (File.exists?(File.join(HOME_DIR,'breakpoint2.dmp')) && !run_full_report) then
+                      exps = load_breakpoint(2)
                     else
-                    if (File.exists?(File.join(HOME_DIR,'breakpoint0.dmp'))) then
-                      exps = load_breakpoint(0)
+                      if (File.exists?(File.join(HOME_DIR,'breakpoint1.dmp')) && !run_full_report) then
+                        exps = load_breakpoint(1)
                       else
-                      print "Getting experiments" ; $stdout.flush
-                      # Get a list of all the experiments (and their properties)
-                      exps = r.get_basic_experiments
-                      puts "Done. #{exps.length} experiments loaded."
-                      
-                      write_breakpoint(0,exps) if MAKE_BREAKPOINTS
-                    end #breakpoint 0 (get experiments)
-                    exps = get_geo_ids_from_NCBI(exps)
-                    write_breakpoint(1,exps) if MAKE_BREAKPOINTS
-                  end #breakpoint 1 (get geo ids from NCBI)
-                  exps = get_organisms(exps, r)
-                  exps = get_read_counts(exps, r)
-                  exps = get_reagents(exps, r)  #this can take awhile
-                  write_breakpoint(2,exps) if MAKE_BREAKPOINTS
-                end #breakpoint 2 (get organisms, read counts, reagents)
-                exps = get_project_and_lab(exps, r)
-                write_breakpoint(3,exps) if MAKE_BREAKPOINTS
-              end #breakpoint 3 (get project and lab assignments)
-              exps = get_protocol_types(exps, r)
-              write_breakpoint(4,exps) if MAKE_BREAKPOINTS
-            end  #breakpoint 4 (get protocol types)
-            exps = get_specimens_in_referenced_submissions(exps, r)
-            write_breakpoint(5,exps) if MAKE_BREAKPOINTS
-          end #breakpoint 5 (referenced submission specimens)
-          
-          exps = process_specimens(exps,r)
-          exps = get_dnase_treatments(exps)
-          exps = get_geo_ids_from_chado(exps,r)
-          exps = get_experiment_types(exps, r)
-          exps = process_antibodies_for_experiments(exps,r)
-          exps = get_submission_status(exps, dbh)
-          
-          puts "#{exps.size} total projects in Chado processed"
-          write_breakpoint(6,exps) if MAKE_BREAKPOINTS
-        end #breakpoint6 (processing metadata for Chado projects)
-        
-        exps = get_microarray_sizes(exps)
-        exps = collect_files_for_experiments(exps,r)
-        exps = get_root_file_paths(exps)
-        
-        write_breakpoint(7,exps) if MAKE_BREAKPOINTS
-      end #breakpoint7 (get files)
-      
-      exps = associate_files_and_attributes(exps, r)  #this can take awhile
-      
-      write_breakpoint(8,exps) if MAKE_BREAKPOINTS
-    end #breakpoint8 (get file attributes)
-    
-    exps = get_GEO_ids_from_files(exps)
-    exps = get_sample_types_for_IP_experiments(exps, r)
-    exps = get_feature_counts_for_CAGE_or_cDNA_experiments(exps, r)
-    exps = get_RNAsize_information(exps,r)
-    exps = get_biological_validation_info(exps, r)
-    
-    write_breakpoint(9,exps) if MAKE_BREAKPOINTS  
-  end #breakpoint9
+                        if (File.exists?(File.join(HOME_DIR,'breakpoint0.dmp')) && !run_full_report) then
+                          exps = load_breakpoint(0)
+                        else
+                          puts "No breakpoints found.  Starting Fresh."
+                          print "Getting experiments" ; $stdout.flush
+                          # Get a list of all the experiments (and their properties)
+                          exps = r.get_basic_experiments
+                          puts "Done. #{exps.length} experiments loaded."
 
-  exps = get_submissions_not_in_chado(exps,r,dbh)
-  exps = figure_out_project_version(exps,r)
-  exps = get_reaction_count_for_RACE_RTPCR_experiments(exps,r)
-  exps = get_missing_metadata_for_deprecated_experiments(exps,r)
-  exps = get_replicate_count_for_experiments(exps,r)
-  exps = clean_up_labels(exps)
-  write_breakpoint(10,exps) if MAKE_BREAKPOINTS
-end  #breakpoint10 (process pipeline-only submissions, deprecated, etc)
+                          write_breakpoint(0,exps) if MAKE_BREAKPOINTS
+                        end #breakpoint 0 (get experiments)
+                        exps = get_geo_ids_from_NCBI(exps)
+                        write_breakpoint(1,exps) if MAKE_BREAKPOINTS
+                      end #breakpoint 1 (get geo ids from NCBI)
+                      exps = get_organisms(exps, r)
+                      exps = get_read_counts(exps, r)
+                      exps = get_reagents(exps, r)  #this can take awhile
+                      write_breakpoint(2,exps) if MAKE_BREAKPOINTS
+                    end #breakpoint 2 (get organisms, read counts, reagents)
+                    exps = get_project_and_lab(exps, r)
+                    write_breakpoint(3,exps) if MAKE_BREAKPOINTS
+                  end #breakpoint 3 (get project and lab assignments)
+                  exps = get_protocol_types(exps, r)
+                  write_breakpoint(4,exps) if MAKE_BREAKPOINTS
+                end  #breakpoint 4 (get protocol types)
+                exps = get_specimens_in_referenced_submissions(exps, r)
+                write_breakpoint(5,exps) if MAKE_BREAKPOINTS
+              end #breakpoint 5 (referenced submission specimens)
 
+              exps = process_specimens(exps,r)
+              exps = get_dnase_treatments(exps)
+              exps = get_geo_ids_from_chado(exps,r)
+              exps = get_experiment_types(exps, r)
+              exps = process_antibodies_for_experiments(exps,r)
+              exps = get_submission_status(exps, dbh)
 
+              puts "#{exps.size} total projects in Chado processed"
+              write_breakpoint(6,exps) if MAKE_BREAKPOINTS
+            end #breakpoint6 (processing metadata for Chado projects)
 
+            exps = get_microarray_sizes(exps)
+            exps = collect_files_for_experiments(exps,r)
+            exps = get_root_file_paths(exps)
+
+            write_breakpoint(7,exps) if MAKE_BREAKPOINTS
+          end #breakpoint7 (get files)
+
+          exps = associate_files_and_attributes(exps, r)  #this can take awhile
+
+          write_breakpoint(8,exps) if MAKE_BREAKPOINTS
+        end #breakpoint8 (get file attributes)
+
+        exps = get_GEO_ids_from_files(exps)
+        exps = get_sample_types_for_IP_experiments(exps, r)
+        exps = get_feature_counts_for_CAGE_or_cDNA_experiments(exps, r)
+        exps = get_RNAsize_information(exps,r)
+        exps = get_biological_validation_info(exps, r)
+
+        write_breakpoint(9,exps) if MAKE_BREAKPOINTS  
+      end #breakpoint9
+      exps = get_genome_build(exps)
+      exps = get_submissions_not_in_chado(exps,r,dbh)
+      exps = figure_out_project_version(exps,r)
+      exps = get_reaction_count_for_RACE_RTPCR_experiments(exps,r)
+      exps = get_missing_metadata_for_deprecated_experiments(exps,r)
+      exps = get_replicate_count_for_experiments(exps,r)
+      exps = clean_up_labels(exps)
+      write_breakpoint(10,exps) if MAKE_BREAKPOINTS
+    end  #breakpoint10 (process pipeline-only submissions, deprecated, etc)
+
+  end
+end
 # Sort the projects by ID
 exps.sort! { |e1, e2| e1["xschema"].match(/_(\d+)_/)[1].to_i <=> e2["xschema"].match(/_(\d+)_/)[1].to_i }
 
@@ -1859,11 +2212,11 @@ print "Writing file..." ; $stdout.flush
 # Output to HTML
 if ARGV[0] && ARGV[0].length > 0 && Formatter.respond_to?("format_#{ARGV[0]}") then
   Formatter::send("format_#{ARGV[0]}", exps, ARGV[1])
-  elsif ARGV[0] && ARGV[0].length > 0 then
+elsif ARGV[0] && ARGV[0].length > 0 then
   $stderr.puts "Unknown option: #{ARGV[0]}"
   $stderr.puts "  Usage:"
   $stderr.puts "    ./make_report.rb [" + Formatter.methods.find_all { |m| m =~ /^format_/ }.map { |m| m.match(/^format_(.*)/)[1] }.join(", ") + "] [outputfile]"
-  else
+else
   Formatter::format_html(exps, ARGV[1])
 end
 puts "Done."

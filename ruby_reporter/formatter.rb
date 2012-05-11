@@ -89,6 +89,7 @@ class Formatter
              "Level 4 <File Format>",
              "Lab",
              "Organism",        
+             "Build",
              "Status", 
              "Data Type",
              "Assay",
@@ -166,7 +167,9 @@ class Formatter
         cols.push format.nil? ? "" : format 
         #cols.push f["type"].split(":").shift.join(":") if !f["type"].empty? #remove ontology prefix
         cols.push e["lab"]
-        cols.push e["organisms"].map { |o| "#{o["genus"]} #{o["species"]}" }.join(", ")
+        #cols.push e["organisms"].map { |o| "#{o["genus"]} #{o["species"]}" }.join(", ")
+        cols.push((e["species"].nil? || e["species"].empty?) ? e["organisms"].map{ |o| "#{o["genus"]} #{o["species"]}" }.sort.join(", ") : e["species"].sort.join(","))
+        cols.push e["build"].nil? ? "" : e["build"]
         cols.push e["status"]
         cols.push e["types"].join(", ")
         cols.push e["experiment_types"].join(", ")
@@ -563,6 +566,8 @@ return factors
             elsif k ==  "Cell Line" then
               l, cols = Formatter::cleanup_cell_line(cols[col_index["Cell Line"]], cols, col_index)
               line.push l.to_s
+            elsif k == "Filename <Build>" then
+              line.push cols[col_index["Build"]]
             elsif k == "PI" then
               line.push cols[col_index["Project"]]
             elsif k == "Filename <Factor>"  then

@@ -391,10 +391,13 @@ end
   end
 
   def get_available_experiments
+    puts "Getting schemas"
     sth_schemas = @dbh.prepare("SELECT DISTINCT schemaname FROM pg_tables WHERE schemaname LIKE 'modencode_experiment_%_data'")
     sth_schemas.execute
     ret = Array.new
+    print "Fetching basic information for each schema..."
     sth_schemas.fetch_hash { |row|
+      print "." ; $stdout.flush
       sth = @dbh.prepare("SELECT experiment_id, uniquename, description FROM #{row["schemaname"]}.experiment")
       sth.execute
       h =  sth.fetch_hash
@@ -404,6 +407,7 @@ end
       ret.push h
     }
     sth_schemas.finish
+    puts "Done."
     return ret
   end
 
@@ -483,6 +487,7 @@ end
 
     return exps
   end
+
 
   def get_nice_types(types)
     # Get all of the feature types for each experiment, and from them
