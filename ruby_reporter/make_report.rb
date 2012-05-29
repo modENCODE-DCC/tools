@@ -9,7 +9,7 @@ require 'getoptlong'
 patch_file = File.join(File.dirname(__FILE__), "dbi_patch.rb")
 if File.exists?(patch_file) then
   require 'dbi_patch.rb'
-  else
+else
   require 'dbi'
   require 'dbd/Pg'
 end
@@ -113,43 +113,43 @@ end
 
 def get_most_recent_breakpoint_dir()
   breakpoint_dirs = Dir.foreach(HOME_DIR).select{|x| x.match(/bps/)}
-  return breakpoint_dirs.select{|x| File.exist?(File.join(x,"breakpoint10.dmp"))}.sort{|x,y| File.mtime(x) <=> File.mtime(y)}.last
+  return breakpoint_dirs.select{|x| File.exist?(File.join(HOME_DIR,x,"breakpoint10.dmp"))}.sort{|x,y| File.mtime(File.join(HOME_DIR,x)) <=> File.mtime(File.join(HOME_DIR,y))}.last
 end
 
 
 
 def get_geo_ids_from_NCBI(exps)
-	print "Getting GEO IDs from NCBI... " ; $stdout.flush
-	# Get GEO IDs from NCBI
-	eutil = Eutils.new
-	eutil_result = eutil.esearch("modencode_submission_*")
-	if eutil_result.nil? then
-		puts "Error with Eutils.  Try again."
-		return
-	end
-	eutil_result2 = eutil.esummary(nil, eutil_result[0], eutil_result[1])
-	got_summaries = REXML::XPath.match(eutil_result2.elements["eSummaryResult"], "DocSum/Item[@Name='summary']")
-	puts "#{got_summaries.length} GEO entries found"
-	print "Assigning GEO IDs to experiments..."
-        unmatched_summaries=Array.new
-	got_summaries.each { |summary_element|
-		print "." ; $stdout.flush
-		this_docsum = summary_element.parent
-		gse = "GSE" + this_docsum.elements["./Item[@Name='GSE']"].text
-		gsm = REXML::XPath.match(this_docsum.elements["./Item[@Name='Samples']"], "./Item[@Name='Sample']/Item[@Name='Accession']").map { |i| i.text }
-		this_exp = exps.find { |e| 
-			e["xschema"].match(/modencode_experiment_(\d+)_data/)[1].to_i == summary_element.text.match(/modencode_submission_(\d+)[^\d]/i)[1].to_i
-		}
-		if this_exp.nil? then
-                  unmatched_summaries += [summary_element.text.match(/modencode_submission_(\d+)[^\d]/i)[1].to_i]
-		  #puts "Couldn't find experiment matching summary #{summary_element.text}"
-	       	  next
-		end
-		this_exp["GSE"] = gse
-		this_exp["GSM"] = gsm
-	}
-	puts "  Done."
-        puts "Unmatched summaries between GEO and these exps: #{unmatched_summaries.join(",")}"
+  print "Getting GEO IDs from NCBI... " ; $stdout.flush
+  # Get GEO IDs from NCBI
+  eutil = Eutils.new
+  eutil_result = eutil.esearch("modencode_submission_*")
+  if eutil_result.nil? then
+    puts "Error with Eutils.  Try again."
+    return
+  end
+  eutil_result2 = eutil.esummary(nil, eutil_result[0], eutil_result[1])
+  got_summaries = REXML::XPath.match(eutil_result2.elements["eSummaryResult"], "DocSum/Item[@Name='summary']")
+  puts "#{got_summaries.length} GEO entries found"
+  print "Assigning GEO IDs to experiments..."
+  unmatched_summaries=Array.new
+  got_summaries.each { |summary_element|
+    print "." ; $stdout.flush
+    this_docsum = summary_element.parent
+    gse = "GSE" + this_docsum.elements["./Item[@Name='GSE']"].text
+    gsm = REXML::XPath.match(this_docsum.elements["./Item[@Name='Samples']"], "./Item[@Name='Sample']/Item[@Name='Accession']").map { |i| i.text }
+    this_exp = exps.find { |e| 
+      e["xschema"].match(/modencode_experiment_(\d+)_data/)[1].to_i == summary_element.text.match(/modencode_submission_(\d+)[^\d]/i)[1].to_i
+    }
+    if this_exp.nil? then
+      unmatched_summaries += [summary_element.text.match(/modencode_submission_(\d+)[^\d]/i)[1].to_i]
+      #puts "Couldn't find experiment matching summary #{summary_element.text}"
+      next
+    end
+    this_exp["GSE"] = gse
+    this_exp["GSM"] = gsm
+  }
+  puts "  Done."
+  puts "Unmatched summaries between GEO and these exps: #{unmatched_summaries.join(",")}"
   return exps
 end
 
@@ -185,20 +185,20 @@ def is_histone_antibody(antibody)
     else
       antibody = "" + antibody # Clone
     end
-    matches = antibody.match(/(?:^|[Hh]istone )(H\d+(([A-Z]\d+|[Tt]etra|[Bb])?(-)?([Mm][Ee]|[Aa][Cc]|[Uu]bi(q)?)(\d*))?([sS]\d+[pP])?([Tt]etra)?\d*)(.*\((.+)\))?/)
-    antibody = matches[1]
-    antibody_name = matches[11]
-    antibody_name = "" if (antibody_name.nil? || antibody_name =~ /lot/)
-    antibody.sub!(/-/, '')
-    antibody.sub!(/[Aa][Cc](\d)?/, 'Ac\1')
-    antibody.sub!(/[Mm][Ee](\d)?/, 'Me\1')
-    antibody.sub!(/[Bb]ubi/, 'BUbi')
-    antibody.sub!(/[sS](\d+)[pP]/, 'S\1P')
-    antibody.sub!(/tetra/, 'Tetra')
-    puts "  Cleaned antibody to #{antibody}"
-    
-    antibody_name = "#{antibody} #{antibody_name}" unless antibody_name.empty?
-    return [ antibody, antibody_name ]
+  matches = antibody.match(/(?:^|[Hh]istone )(H\d+(([A-Z]\d+|[Tt]etra|[Bb])?(-)?([Mm][Ee]|[Aa][Cc]|[Uu]bi(q)?)(\d*))?([sS]\d+[pP])?([Tt]etra)?\d*)(.*\((.+)\))?/)
+  antibody = matches[1]
+  antibody_name = matches[11]
+  antibody_name = "" if (antibody_name.nil? || antibody_name =~ /lot/)
+  antibody.sub!(/-/, '')
+  antibody.sub!(/[Aa][Cc](\d)?/, 'Ac\1')
+  antibody.sub!(/[Mm][Ee](\d)?/, 'Me\1')
+  antibody.sub!(/[Bb]ubi/, 'BUbi')
+  antibody.sub!(/[sS](\d+)[pP]/, 'S\1P')
+  antibody.sub!(/tetra/, 'Tetra')
+  puts "  Cleaned antibody to #{antibody}"
+
+  antibody_name = "#{antibody} #{antibody_name}" unless antibody_name.empty?
+  return [ antibody, antibody_name ]
   end
   return false
 end
@@ -252,35 +252,35 @@ def get_submission_status (exps, dbh)
   # Throw out any deprecated or unreleased projects; look up the status in the pipeline
   # database, which is separate from Chado
   # Also, grab creation and release dates
-  
+
   print "  Looking up submission status." ; $stdout.flush
   sth = dbh.prepare("SELECT status, deprecated_project_id, superseded_project_id, created_at, updated_at FROM projects WHERE id = ?")
   sth_release_date = dbh.prepare("SELECT MAX(c.end_time) AS release_date FROM commands c 
                                  INNER JOIN projects p ON p.id = c.project_id 
                                  WHERE c.type = 'Release' AND c.status = 'released' GROUP BY p.id HAVING p.id = ?")                                
-  exps.clone.each { |e|
-    print "." ; $stdout.flush
-    pipeline_id = e["xschema"].match(/_(\d+)_/)[1].to_i
-    sth.execute(pipeline_id)
-    (status, deprecated, superseded, created_at, updated_at) = sth.fetch_array
-    if status.nil? then
-      # Chado entry, but deleted from pipeline
-      exps.delete(e)
-      next
-    end
-    e["status"] = status
-    e["deprecated"] = (deprecated != "" && !deprecated.nil?) ? deprecated : false
-    e["superseded"] = (superseded != "" && !superseded.nil?) ? superseded : false
-    sth_release_date.execute(pipeline_id)
-    release_date = sth_release_date.fetch_array
-    release_date = release_date.nil? ? updated_at : release_date[0]
-    e["created_at"] = Date.parse(created_at).to_s unless created_at.nil?
-    e["released_at"] = Date.parse(release_date).to_s unless release_date.nil?
-  }
-  sth.finish
-  sth_release_date.finish
-  puts "Done."
-  return exps
+                                 exps.clone.each { |e|
+                                   print "." ; $stdout.flush
+                                   pipeline_id = e["xschema"].match(/_(\d+)_/)[1].to_i
+                                   sth.execute(pipeline_id)
+                                   (status, deprecated, superseded, created_at, updated_at) = sth.fetch_array
+                                   if status.nil? then
+                                     # Chado entry, but deleted from pipeline
+                                     exps.delete(e)
+                                     next
+                                   end
+                                   e["status"] = status
+                                   e["deprecated"] = (deprecated != "" && !deprecated.nil?) ? deprecated : false
+                                   e["superseded"] = (superseded != "" && !superseded.nil?) ? superseded : false
+                                   sth_release_date.execute(pipeline_id)
+                                   release_date = sth_release_date.fetch_array
+                                   release_date = release_date.nil? ? updated_at : release_date[0]
+                                   e["created_at"] = Date.parse(created_at).to_s unless created_at.nil?
+                                   e["released_at"] = Date.parse(release_date).to_s unless release_date.nil?
+                                 }
+                                 sth.finish
+                                 sth_release_date.finish
+                                 puts "Done."
+                                 return exps
 end
 
 
@@ -340,7 +340,7 @@ def get_reagents(exps, r)
     data = r.get_data_for_schema(e["xschema"])
     data = data.uniq_by { |d| [ d["heading"], d["name"], d["value"] ] }
     e["all_data"] = data
-    
+
     #TODO: should this be done later?
     # Are there any SAM/BAM files? If so, add "alignments" to the types
     # of data in this experiment
@@ -349,7 +349,7 @@ def get_reagents(exps, r)
     if bam_files.size > 0 then
       e["types"] += [ "alignments" ]
     end
-    
+
     #TODO: should this be done later?  should we test for BED too?
     # Are there any WIG files? If so, add "signal data" to the types
     # of data in this experiment
@@ -358,26 +358,26 @@ def get_reagents(exps, r)
       # Find out what kind of wiggle files after we can look at the protocols
       e["types"] += [ "signal data" ]
     end
-    
+
     # specimens
     # Get any specimens (cell line, strain, stage) attached to this
     # experiment; requires the correct type(s) (see regex below and
     # filters to make sure it matches the expected style for specimen
     # data
     e["specimens"] = r.collect_specimens(data, e["xschema"])
-    
+
     # antibodies
     # Get any antibodies attached to this experiment; requires the 
     # correct type (MO:antibody) and for it to be from a wiki page 
     # with an "official name" field
     e["antibodies"] = r.collect_antibodies(data, e["xschema"])
-    
+
     # microarrays
     # Get any microarrays attached to this experiment; requires the
     # correct type (modencode:ADF) and for it to be from a wiki page
     # with an "official name" field
     e["arrays"] = r.collect_microarrays(data, e["xschema"])
-    
+
     e["files"] = r.collect_files(data, e["xschema"])    
     e["compound"] = r.collect_compounds(data, e["xschema"])    
     e["labels"] = r.collect_labels(data, e["xschema"])    
@@ -396,7 +396,7 @@ def get_project_and_lab(exps, r)
     begin
       e["project"] = attrs.find { |a| a["name"] == "Project" }["value"]
       e["lab"] = attrs.find { |a| a["name"] == "Lab" }["value"]
-      rescue
+    rescue
       puts "Can't find project or lab for #{e["xschema"]}"
     end
   }
@@ -423,14 +423,14 @@ def get_specimens_in_referenced_submissions(exps, r)
   # RNA samples, this means pulling in the protocol types for growth, RNA
   # extraction, organism purification, etc., as well as the data attached to
   # those protocols.
-  
+
   print "  Checking for referenced submissions..." ; $stdout.flush
   exps.each { |e|
     # ex: I have an SRA ID and I need to find it in an old experiment
     # Then I need to folow the graph in the old experiment to collect speciments
     # Including watching out for any further references to even older experiments
     specimens_by_schema = r.recursively_find_referenced_specimens(e["xschema"], e["specimens"])
-    
+
     all_specimens = specimens_by_schema.values.flatten(1)
     e["all_specimens"] = e["specimens"] = all_specimens
   }
@@ -448,7 +448,7 @@ def get_compounds_for_experiment(e)
       cmp += concentration_unit["value"] unless concentration_unit.nil?
       cmp += " #{compound["name"]}"
       filtered_compounds.push cmp
-      else
+    else
       filtered_compounds.push e["compound"]
     end
   }
@@ -466,7 +466,7 @@ def get_temps_for_experiment(e)
       unit = temp["attributes"].find { |attr| attr["heading"] =~ /Unit/i } 
       tmp += " #{unit["value"]}" unless unit.nil?
       filtered_temps.push tmp
-      else
+    else
       filtered_temps.push e["temp"]
     end
   }
@@ -480,12 +480,12 @@ def format_specimen_type_for_poorly_typed_data(sp, xschema)
   if sp["heading"] =~ /(Parameter|Result) Value/ && sp["type"] =~ /organism_part/ then
     old_type = sp["type"]
     sp["type"] = "MO:cell_line" if sp["value"] =~ /^CellLine/
-    sp["type"] = "stage" if sp["value"] =~ /^DevStage/
-    sp["attributes"].delete_if { |a| a["heading"] == "official name" } unless sp["type"] == "MO:cell_line"
-    # Print to console to let us know we've made up a type here
-    puts "  #{xschema}\tRewrote #{old_type} to #{sp["type"]}" if old_type != sp["type"]
+      sp["type"] = "stage" if sp["value"] =~ /^DevStage/
+      sp["attributes"].delete_if { |a| a["heading"] == "official name" } unless sp["type"] == "MO:cell_line"
+      # Print to console to let us know we've made up a type here
+      puts "  #{xschema}\tRewrote #{old_type} to #{sp["type"]}" if old_type != sp["type"]
   end
-  
+
   # MacAlpine data often has data typed as BioSample, which then have multiple "Characteristics"
   # columns; one for stage, one for cell line, etc. This checks to see if those Characteristics
   # are explicitly typed (e.g. "Characteristic [line] (MO:cell_line)" in the SDRF), and if so,
@@ -496,24 +496,24 @@ def format_specimen_type_for_poorly_typed_data(sp, xschema)
     sp["type"] = ""
     sp["type"] += " cell_line" if sp["attributes"].find { |attr| 
       (attr["heading"] =~ /Characteristics?/i && attr["value"] =~ /^CellLine/) ||
-      attr["type"] =~ /MO:cell_line|MO:CellLine/
+        attr["type"] =~ /MO:cell_line|MO:CellLine/
     }
-    sp["type"] += " strain" if sp["attributes"].find { |attr| 
-      (attr["heading"] =~ /Characteristics?/i && attr["value"] =~ /Strain/) ||
-      attr["type"] =~ /MO:strain_or_line/
-    }
-    sp["type"] += " stage" if sp["attributes"].find { |attr| 
-      (attr["heading"] =~ /Characteristics?/i && attr["value"] =~ /Stage/) ||
-      attr["type"] =~ /MO:developmental_stage/
-    }
-    sp["type"].gsub!(/^\s*|\s*$/, '')
-    # Print to console to let us know we're inherting a type here
-    puts "  #{xschema}\tRewrote #{old_type} to #{sp["type"]}; inherited from attributes" if old_type != sp["type"]
+      sp["type"] += " strain" if sp["attributes"].find { |attr| 
+        (attr["heading"] =~ /Characteristics?/i && attr["value"] =~ /Strain/) ||
+          attr["type"] =~ /MO:strain_or_line/
+      }
+        sp["type"] += " stage" if sp["attributes"].find { |attr| 
+          (attr["heading"] =~ /Characteristics?/i && attr["value"] =~ /Stage/) ||
+            attr["type"] =~ /MO:developmental_stage/
+        }
+          sp["type"].gsub!(/^\s*|\s*$/, '')
+          # Print to console to let us know we're inherting a type here
+          puts "  #{xschema}\tRewrote #{old_type} to #{sp["type"]}; inherited from attributes" if old_type != sp["type"]
   end
   # Other hacks for strange ontology terms:
   sp["type"] = "MO:cell_line" if sp["type"] == "MO:cell" # Geez, really? (fixes exp #444)
   sp["type"] = "MO:cell_line" if sp["type"] == "obi-biomaterial:cell line culture" # (ditto #296)
-  
+
   return sp
 end
 
@@ -536,13 +536,13 @@ def process_specimens(exps, r)
     e["growth_condition"] = Array.new if e["growth_condition"].nil?
     e["rnai_targets"] = Array.new if e["rnai_targets"].nil?
     e["sra_ids"] = Array.new if e["sra_ids"].nil?
-    
-    
+
+
     e["compound"] = get_compounds_for_experiment(e).uniq
     e["temp"] = get_temps_for_experiment(e).uniq
     e["specimens"].each { |sp|
       sp = format_specimen_type_for_poorly_typed_data(sp, e["xschema"])
-      
+
       # By default, just look for attributes titled "tissue", "strain", or "stage" to get the tissue,
       # strain, and stage. (E.g. "SomeAttribute [tissue]".)
       #      if sp["attributes"].nil? then
@@ -552,16 +552,16 @@ def process_specimens(exps, r)
       stage  = sp["attributes"].find_all { |attr| attr["heading"] =~ /stage/ }
       tissue = sp["attributes"].find_all { |attr| attr["heading"] == "tissue" }
       strain = sp["attributes"].find_all { |attr| attr["heading"] == "strain" }
-      
+
       # Get the values of tissue, strain, and stage, rather than the whole datum
       e["stage"]  += stage.map  { |s| s["value"]  } unless stage.size == 0
       e["tissue"] += tissue.map { |t| t["value"] } unless tissue.size == 0
       strain.each { |attr| attr["type"] = "MO:strain_or_line" }
       e["strain"] += strain unless strain.size == 0
-      
+
       # Okay, now we get into the complex heuristics where we try to sort out the reagent
       # information based on various types and headings
-      
+
       #############
       #   STAGE   #
       #############
@@ -572,12 +572,12 @@ def process_specimens(exps, r)
       if sp["attributes"].find { |attr| attr["heading"] =~ /Characteristics?/ && attr["name"] == "stage" } then
         stage_expand = sp["attributes"].find { |attr| 
           (attr["heading"] =~ /Characteristics?/i && attr["value"] =~ /^Stage/) ||
-          attr["type"] =~ /MO:developmental_stage/
+            attr["type"] =~ /MO:developmental_stage/
         }
-        if stage_expand then
-          stage += sp["attributes"].find_all { |attr| attr["attr_group"] == stage_expand["attr_group"] && attr["heading"] == "official name" }
-        end
-        e["stage"] += stage.map { |s| s["value"] }
+          if stage_expand then
+            stage += sp["attributes"].find_all { |attr| attr["attr_group"] == stage_expand["attr_group"] && attr["heading"] == "official name" }
+          end
+          e["stage"] += stage.map { |s| s["value"] }
       end
       # How about any "Parameter/Result Value" columns with a type containing "stage" and 
       # an attribute with a heading of "developmental stage" or "official name"? If yes, 
@@ -602,7 +602,7 @@ def process_specimens(exps, r)
         stage = stage_attr["value"]
         e["stage"].push stage unless (stage.nil? || stage.length == 0)
       end
-      
+
       #############
       #  TISSUE   #
       #############
@@ -631,14 +631,14 @@ def process_specimens(exps, r)
         tissue = [ "organism part - FIXME" ]
         e["tissue"] += tissue if e["tissue"].size == 0
       end
-      
+
       if e["tissue"].size == 0 && e["specimens"].find { |sp2| sp2["type"] =~ /MO:(whole_)?organism/ } then
         e["tissue"] += [ "whole organism" ]
       end
-      
-      
-      
-      
+
+
+
+
       #############
       #  STRAIN   #
       #############
@@ -649,14 +649,14 @@ def process_specimens(exps, r)
       if sp["attributes"].find { |attr| attr["heading"] =~ /Characteristics?/ && attr["name"] == "strain" } then
         strain_expand = sp["attributes"].find { |attr| 
           (attr["heading"] =~ /Characteristics?/i && attr["value"] =~ /^Strain/) ||
-          attr["type"] =~ /MO:strain_or_line/
+            attr["type"] =~ /MO:strain_or_line/
         }
-        if strain_expand then
-          strain = sp["attributes"].find_all { |attr| attr["attr_group"] == strain_expand["attr_group"] && attr["heading"] == "official name" }
-        end
-        strain.each { |attr| attr["type"] = "MO:strain_or_line" }
-        strain.each { |attr| attr["title"] = sp["name"] }
-        e["strain"] += strain unless strain.size == 0
+          if strain_expand then
+            strain = sp["attributes"].find_all { |attr| attr["attr_group"] == strain_expand["attr_group"] && attr["heading"] == "official name" }
+          end
+          strain.each { |attr| attr["type"] = "MO:strain_or_line" }
+          strain.each { |attr| attr["title"] = sp["name"] }
+          e["strain"] += strain unless strain.size == 0
       end
       # Are there any "Parameter/Result Value" or "Source/Sample Name" columns with a type 
       # containing "strain_or_line", a value containing "Strain", and an attribute with a 
@@ -683,7 +683,7 @@ def process_specimens(exps, r)
       end
       # It's not N/A if anything was found, duh.
       e["strain"].delete("N/A") if e["strain"].uniq.size > 1
-      
+
       #############
       # CELL LINE #
       #############
@@ -698,16 +698,16 @@ def process_specimens(exps, r)
         # First, try to find a typed attribute:
         cell_line_expand = sp["attributes"].find { |attr| 
           (attr["heading"] =~ /Characteristics?/i && attr["value"] =~ /^CellLine/) ||
-          attr["type"] =~ /MO:cell_line|MO:CellLine/
+            attr["type"] =~ /MO:cell_line|MO:CellLine/
         }
-        if cell_line_expand then
-          cell_line = sp["attributes"].find_all { |attr| attr["attr_group"] == cell_line_expand["attr_group"] && attr["heading"] == "official name" }
-        end
-        blank_cell_line = sp["attributes"].find { |attr| attr["type"] =~ /MO:cell_line|MO:CellLine/ }
-        cell_line = sp["attributes"].find_all { |attr| attr["heading"] == "official name" } if (blank_cell_line.nil? && (cell_line.nil? || cell_line.size == 0))
-        e["cell_line"].push cell_line.map { |t| r.unescape(t["value"]) } unless cell_line.size == 0
+          if cell_line_expand then
+            cell_line = sp["attributes"].find_all { |attr| attr["attr_group"] == cell_line_expand["attr_group"] && attr["heading"] == "official name" }
+          end
+          blank_cell_line = sp["attributes"].find { |attr| attr["type"] =~ /MO:cell_line|MO:CellLine/ }
+          cell_line = sp["attributes"].find_all { |attr| attr["heading"] == "official name" } if (blank_cell_line.nil? && (cell_line.nil? || cell_line.size == 0))
+          e["cell_line"].push cell_line.map { |t| r.unescape(t["value"]) } unless cell_line.size == 0
       end
-      
+
       #############
       # PLATFORM  #
       #############
@@ -715,7 +715,7 @@ def process_specimens(exps, r)
         array_platform = sp["attributes"].find_all { |attr| attr["heading"] == "platform" }
         e["array_platform"].push array_platform.map { |t| r.unescape(t["value"]) } unless array_platform.size == 0
       end
-      
+
       #############
       # COMPOUND  #
       #############
@@ -726,12 +726,12 @@ def process_specimens(exps, r)
           dose = sp["attributes"].find_all { |attr| attr["name"] =~ /Dose/i }
           if (unit.size > 0 && dose.size > 0) then
             e["compound"].push "#{dose[0]["value"]}#{unit[0]["value"]} #{compound[0]["value"]}"
-            else
+          else
           end
         end
       end
-      
-      
+
+
       #############
       #   TEMPS   #
       #############
@@ -742,22 +742,22 @@ def process_specimens(exps, r)
         unit = sp["attributes"].find { |attr| attr["heading"] =~ /Unit/i }["value"]
         e["temp"].push "#{temp} #{unit}"
       end
-      
-      
+
+
       #############
       #  SRA IDs  #
       #############
       if sp["type"] =~ /modencode:ShortReadArchive_project_ID \(SRA\)/ then
         e["sra_ids"].push sp["value"]
-        elsif sp["type"] =~ /modencode:ShortReadArchive_project_ID_list \(SRA\)/ then
+      elsif sp["type"] =~ /modencode:ShortReadArchive_project_ID_list \(SRA\)/ then
         sra_ids = sp["value"].split(/;/).map { |id| id.match(/^(SRA[^\.])*\./)[1] }
         sra_ids.uniq!
         puts "Got: #{sra_ids.join(";")}"
         e["sra_ids"].push sra_ids
       end
       e["sra_ids"].uniq!
-      
-      
+
+
       ###############
       # RNAi TARGET #
       ###############
@@ -767,14 +767,14 @@ def process_specimens(exps, r)
           e["rnai_targets"].push target.map { |t| r.unescape(t["value"]) }
         end
       end
-      
+
       ####################
       # GROWTH CONDITION #
       ####################
       if sp["type"] =~ /MO:GrowthCondition/ then
         e["growth_condition"].push r.unescape("#{sp["name"]}:#{sp["value"]}") if sp["value"].length > 0
       end
-      
+
       #############
       #  CLEANUP  #
       #############
@@ -786,7 +786,7 @@ def process_specimens(exps, r)
         # Cell lines don't have to have strains
         e["strain"] += [ "N/A" ]
       end
-      
+
       # If we didn't find a tissue, strain, stage, or cell_line from this specimen,
       # then it's not much of a specimen, is it? Whine about it so we can either add
       # a new case for it or fix the submission.
@@ -794,18 +794,18 @@ def process_specimens(exps, r)
         puts "What is #{sp.pretty_inspect} for #{e["xschema"]}"
       end
     }
-    
+
     # If we haven't yet found a tissue, is there any datum of type "whole_organism"?
     # If so, then lets assume the tissue in this case is the whole organism.
     if e["tissue"].size == 0 && e["specimens"].find { |sp2| sp2["type"] =~ /MO:(whole_)?organism/ } then
       e["tissue"] += [ "whole organism" ]
     end
-    
+
     # Strip any leading CV name from stages, e.g. "FlyBase development CV:"
     e["stage"].map { |s| 
       s.sub!(/^.*development(_|\s)*CV:/, '')
     } unless e["stage"].nil?
-    
+
     # If we _still_ haven't found out what tissue was used, and _any_ specimen has
     # a type of "whole_organism", we'll go with that
     if e["specimens"].find { |sp2| sp2["type"] =~ /MO:(whole_)?organism/ } && e["tissue"].size == 0 && e["sra_ids"].size == 0 then
@@ -819,7 +819,7 @@ def process_specimens(exps, r)
       e["strain"] = strain_titled_strains
     end
     e["strain"] = e["strain"].map { |strain| strain.is_a?(Hash) ? strain["value"] : strain }
-    
+
     e["array_platform"].push("N/A") if e["array_platform"].size == 0
     e["strain"].uniq!
     e["tissue"].uniq!
@@ -828,9 +828,9 @@ def process_specimens(exps, r)
     e["compound"].uniq!
     e["growth_condition"].uniq!
     e["stage"].uniq! unless e["stage"].nil?
-    
+
     e["tissue"] = [ "whole organism" ] if e["tissue"].size == 0 && e["strain"].size > 0
-    
+
     if e["tissue"].size > 1 && e["tissue"].include?("whole organism") then
       e["tissue"] -= ["whole organism"]
     end
@@ -846,7 +846,7 @@ def get_dnase_treatments(exps)
     print "." ; $stdout.flush
     if e["protocol_types"].find { |row| row["name"] =~ /no dnase/i } then
       e["dnase_treatment"] = "no"
-      else
+    else
       e["dnase_treatment"] = ""
     end
   }
@@ -867,14 +867,39 @@ def get_geo_ids_from_chado(exps, r)
   return exps
 end
 
+def get_experiment_types_simple(exps, r)
+  print "Getting experiment types"
+  exps.each { |e|
+    print "."; $stdout.flush
+    #protocol_types = e["protocol_types"].map { |row| row["type"] }
+    e["experiment_types"] = r.get_assay_type(e["xschema"]).map { |type| type == "" ? nil : type }.compact # Is it in the DB?
+    if e["experiment_types"].size > 0 && !e["experiment_types"][0].empty? then
+      # Use existing assay type
+      type = e["experiment_types"][0]
+    end
+  }
+  puts "Done."
+  return exps
+end
+
+def get_data_types(exps, r)
+  print "Getting data types..." ; $stdout.flush
+  exps.each { |e|
+    print "." ; $stdout.flush
+    e["data_type"] = r.get_data_type(e["xschema"]).map { |type| type == "" ? nil : type }.compact
+  }
+  puts "Done."
+  return exps
+end
+
 def get_experiment_types(exps, r)
   # Search through all of the protocol types to figure out the type of the 
   # experiment
-  
+
   print "Getting experiment types" ; $stdout.flush
   exps.each { |e|
+    print "." ; $stdout.flush
     protocol_types = e["protocol_types"].map { |row| row["type"] }
-    
     e["experiment_types"] = r.get_assay_type(e["xschema"]).map { |type| type == "" ? nil : type }.compact # Is it in the DB?
     if e["experiment_types"].size > 0 && !e["experiment_types"][0].empty? then
       # Use existing assay type
@@ -883,88 +908,88 @@ def get_experiment_types(exps, r)
       type.sub!(/Sample Creation/i, "Sample creation")
       type.sub!(/tiling array:\s*RNA/i, "tiling array: RNA")
       e["experiment_types"][0] = type
-      
+
       if type =~ /Gene Structure/ then
         e["experiment_types"] = [ "gene model" ]
       end
       if type =~ /Sample creation/i then
         e["types"] = [ "N/A (metadata only)" ]
-        elsif (type =~ /ChIP/ || type =~ /tiling array: DNA/) && e["types"].include?("signal data") then
+      elsif (type =~ /ChIP/ || type =~ /tiling array: DNA/) && e["types"].include?("signal data") then
         e["types"].delete("signal data")
         e["types"].push("chromatin binding site signal data")
         if e["uniquename"] =~ /replication timing/i then
           e["types"] = [ "replication timing" ]
-          elsif e["uniquename"] =~ /origin/i then
+        elsif e["uniquename"] =~ /origin/i then
           e["types"] = [ "origins of replication" ]
-          elsif e["uniquename"] =~ /(orc|mcm)[^a-z]/i then
+        elsif e["uniquename"] =~ /(orc|mcm)[^a-z]/i then
           e["types"] = [ "replication factors" ]
         end
-        elsif type =~ /CAGE/ then
+      elsif type =~ /CAGE/ then
         e["types"] = [ "RNA profiling" ]
-        else
+      else
         e["types"].delete("binding sites") if e["types"].include?("chromatin binding sites")
         e["types"].delete("binding sites") if e["types"].include?("chromatin binding site signal data")
         if e["types"].size == 0 && (
-                                    (!e["GSE"].nil? && e["GSE"].length > 0) ||
-                                    e["GSM"].size > 0 ||
-                                    e["sra_ids"].size > 0
-                                    ) then
-          e["types"].push "raw sequences"
+          (!e["GSE"].nil? && e["GSE"].length > 0) ||
+          e["GSM"].size > 0 ||
+          e["sra_ids"].size > 0
+        ) then
+        e["types"].push "raw sequences"
         end
       end
       print "." ; $stdout.flush
       next
     end
-    
+
     # hybridization - ChIP = RNA tiling array
     # extraction + sequencing + reverse transcription - ChIP = RTPCR
     # extraction + sequencing - reverse transcription - ChIP = RNA-seq
     if 
       protocol_types.find { |pt| pt =~ /nucleic acid extraction|nucleic_acid_extraction|RNA extraction/ } && 
-      protocol_types.find { |pt| pt =~ /sequencing(_protocol)?/ } && 
-      protocol_types.find { |pt| pt =~ /chromatin_immunoprecipitation/ }.nil?
+        protocol_types.find { |pt| pt =~ /sequencing(_protocol)?/ } && 
+        protocol_types.find { |pt| pt =~ /chromatin_immunoprecipitation/ }.nil?
       then
       if protocol_types.find { |pt| pt =~ /reverse_transcription/ } then
         e["experiment_types"].push "RTPCR"
-        else
+      else
         e["experiment_types"].push "RNA-seq"
       end
     end
-    
+
     if 
       protocol_types.find { |pt| pt =~ /^extraction$/ } &&  # DNA-seq, probably
-      protocol_types.find { |pt| pt =~ /sequencing(_protocol)?/ } && 
-      protocol_types.find { |pt| pt =~ /chromatin_immunoprecipitation/ }.nil?
+        protocol_types.find { |pt| pt =~ /sequencing(_protocol)?/ } && 
+        protocol_types.find { |pt| pt =~ /chromatin_immunoprecipitation/ }.nil?
       then
       if protocol_types.find { |pt| pt =~ /reverse_transcription/ } then
         e["experiment_types"].push "RTPCR"
-        else
+      else
         e["experiment_types"].push "DNA-seq"
       end
     end
-    
+
     if e["rnai_targets"].size > 0 then
       e["experiment_types"].push "RNAi"
     end
-    
+
     # reverse transcription + PCR + RACE = RACE
     # reverse transcription + PCR - RACE = RTPCR
     if 
       protocol_types.find { |pt| pt =~ /reverse_transcription/ } && 
-      protocol_types.find { |pt| pt =~ /PCR(_amplification)?/ }
+        protocol_types.find { |pt| pt =~ /PCR(_amplification)?/ }
       then
       if e["types"].size > 0 then
         if e["protocol_types"].find { |row| row["description"] =~ /RACE/ } then
           e["experiment_types"] = [ "RACE" ]
-          else
+        else
           e["experiment_types"].push "RTPCR"
         end
-        else
+      else
         e["experiment_types"].push "Sample creation"
         e["types"] = [ "N/A (metadata only)" ]
       end
     end
-    
+
     # ChIP + hybridization = ChIP-chip
     # ChIP - hybridization = ChIP-seq
     if 
@@ -972,22 +997,22 @@ def get_experiment_types(exps, r)
       then
       if protocol_types.find { |pt| pt =~ /hybridization/ } then
         e["experiment_types"].push "ChIP-chip"
-        else
+      else
         e["experiment_types"].push "ChIP-seq"
       end
     end
-    
+
     if 
       protocol_types.find { |pt| pt =~ /hybridization/ } &&
-      protocol_types.find { |pt| pt =~ /immunoprecipitation/ }.nil?
+        protocol_types.find { |pt| pt =~ /immunoprecipitation/ }.nil?
       then
       if e["compound"] && e["compound"].find { |compound| compound =~ /sodium chloride/ } then
         e["experiment_types"].push "tiling array: DNA"
-        else
+      else
         e["experiment_types"].push "tiling array: RNA"
       end
     end
-    
+
     # annotation = Computational annotation
     if 
       protocol_types.find { |pt| pt =~ /annotation/i } && !e["experiment_types"].include?("RACE") && !e["experiment_types"].include?("RTPCR")
@@ -1004,15 +1029,15 @@ def get_experiment_types(exps, r)
         e["antibody_targets"] = [ "N/A" ]
       end
     end
-    
+
     # If we haven't found a type yet, and there is a growth protocol, then
     # this is probably an RNA Sample creation experiment from Celniker
     if 
       e["experiment_types"].size == 0 && 
-      (
-       protocol_types.find { |pt| pt =~ /grow/ } || 
-       protocol_types.find { |pt| pt =~ /organism_purification_protocol/ }
-       )
+        (
+          protocol_types.find { |pt| pt =~ /grow/ } || 
+          protocol_types.find { |pt| pt =~ /organism_purification_protocol/ }
+      )
       then
       e["types"] = [ "N/A (metadata only)" ]
       e["experiment_types"].push "Sample creation"
@@ -1020,7 +1045,7 @@ def get_experiment_types(exps, r)
       e["antibody_targets"] = [ "N/A" ]
     end
     e["experiment_types"].uniq!
-    
+
     # If this experiment had signal data and used ChIP, then it made
     # "chromatin binding site signal data", not just generic signal data,
     # so replace the generic type with the specific one.
@@ -1032,7 +1057,7 @@ def get_experiment_types(exps, r)
       e["types"].delete("signal data") if wig_types.size > 0
       e["types"] += wig_types
     end
-    
+
     # pairwise_sequence_alignment = Alignment
     if e["experiment_types"].size == 0 && protocol_types.find { |pt| pt =~ /pairwise_sequence_alignment/ } then
       if protocol_types.find { |pt| pt =~ /PCR(_amplification)?/ } then
@@ -1040,44 +1065,44 @@ def get_experiment_types(exps, r)
           # Only way to detect CAGE is by protocol name, since really it's the same kind of experiment
           e["experiment_types"].push "CAGE"
           e["types"] = [ "RNA profiling" ]
-          else 
+        else 
           if e["protocol_types"].find { |row| row["name"] =~ /RNA/ } then
             # These are some poorly characterized Gingeras submissions where the first
             # protocol includes purification, (unlisted) extraction, PCR, and labeling.
             e["experiment_types"].push "RNA-seq"
-            elsif e["xschema"] =~ /_712_/ then
+          elsif e["xschema"] =~ /_712_/ then
             # This experiment looks almost exactly like cDNA sequencing, but is apparently RNA-seq
             e["experiment_types"].push "RNA-seq"
-            else
+          else
             e["experiment_types"].push "cDNA sequencing"
             e["types"] = [ "gene model" ]
           end
         end
-        else
+      else
         e["experiment_types"].push "Alignment"
       end
     end
-    
+
     if e["experiment_types"].include?("ChIP-chip") || e["experiment_types"].include?("ChIP-seq") then
       if e["uniquename"] =~ /replication timing/i then
         e["types"] = [ "replication timing" ]
-        elsif e["uniquename"] =~ /origin/i then
+      elsif e["uniquename"] =~ /origin/i then
         e["types"] = [ "origins of replication" ]
-        elsif e["uniquename"] =~ /(orc|mcm)[^a-z]/i then
+      elsif e["uniquename"] =~ /(orc|mcm)[^a-z]/i then
         e["types"] = [ "replication factors" ]
       end
     end
-    
+
     # If we have specific types of binding sites, then get rid of the generic
     # "binding sites"
     e["types"].delete("binding sites") if e["types"].include?("chromatin binding sites")
     e["types"].delete("binding sites") if e["types"].include?("chromatin binding site signal data")
     if e["types"].size == 0 && (
-                                (!e["GSE"].nil? && e["GSE"].length > 0) ||
-                                e["GSM"].size > 0 ||
-                                e["sra_ids"].size > 0
-                                ) then
-      e["types"].push "raw sequences"
+      (!e["GSE"].nil? && e["GSE"].length > 0) ||
+      e["GSM"].size > 0 ||
+      e["sra_ids"].size > 0
+    ) then
+    e["types"].push "raw sequences"
     end
   }
   print "Done.\n" #Experiment Types
@@ -1090,8 +1115,8 @@ def get_antibody_target_and_name(e)
   #one each for the N- or C-terminus
   e["antibody_names"] = Array.new if e["antibody_names"].nil?
   e["antibody_targets"] = Array.new if e["antibody_targets"].nil?
-  
-  
+
+
   e["antibodies"].each { |a|
     if (a["attributes"].find { |attr| attr["heading"] == "Histone_name" } ) then
       # check to see if the antibody is specifically to a histone mod
@@ -1112,15 +1137,15 @@ def get_antibody_target_and_name(e)
       #there should always be a worm or fly gene id for an antibody, that should be the "target"
       target = a["attributes"].find { |attr| attr["heading"] == "target id" }
       target = target["value"] unless target.nil?
-      
+
       #put in a standard string, if this is a control
       target = a["attributes"].find { |attr| attr["species"] == "None-Control" }
       target = target["value"] unless target.nil?
-      
+
       #if the target gene id can't be found, then use the target name
       target = a["attributes"].find { |attr| attr["heading"] == "target name" } 
       target = (target.nil? || target["value"] == "Not Applicable") ? nil : target["value"]
-      
+
       # If not a target name on an antibody, what about a target ID attached to a
       # specimen in this project?  this might be the case for GFP or FLAG
       e["specimens"].each { |sp| 
@@ -1133,7 +1158,7 @@ def get_antibody_target_and_name(e)
     end
     name = a["attributes"].find { |attr| attr["heading"] == "official name" }
     name = name["value"] unless name.nil?
-    
+
     target.sub!(/(fly|worm)_genes:/, '') unless target.nil?
     e["antibody_names"].push name # unless name.nil? || name.empty?
     e["antibody_targets"].push target # unless target.nil? || target.empty?
@@ -1152,7 +1177,7 @@ def clean_up_feature_and_experiment_types(e)
     e["types"].include?("EST alignments") ||
     e["types"].include?("polyA_site") ||
     e["types"].include?("cDNA alignments") then
-    
+
     e["types"].delete("splice sites")
     e["types"].delete("transcription/coding junctions")
     e["types"].delete("alignments")
@@ -1163,37 +1188,37 @@ def clean_up_feature_and_experiment_types(e)
     e["types"].delete("EST alignments")
     e["types"].delete("EST alignments")
     e["types"].delete("cDNA alignments")
-    
+
     if e["types"].include?("signal data") && !e["experiment_types"].include?("Computational annotation") then
       e["types"] = [ "transcription" ]
       e["experiment_types"].push("tiling array: RNA") if e["experiment_types"].delete("ChIP-chip")
-      elsif !e["protocol_types"].find { |row| row["type"] =~ /annotation/ } then
+    elsif !e["protocol_types"].find { |row| row["type"] =~ /annotation/ } then
       # Piano partial submissions that should be labeled RNA-seq, but only provided the sequences
       if e["experiment_types"].include?("RNA-seq") && !e["protocol_types"].find { |row| row["type"] =~ /alignment/ }  then
         e["types"] = [ "raw sequences" ]
-        elsif e["experiment_types"].include?("RACE") || e["experiment_types"].include?("RTPCR") then
+      elsif e["experiment_types"].include?("RACE") || e["experiment_types"].include?("RTPCR") then
         e["types"] = [ "gene model" ]
-        elsif e["experiment_types"].include?("Computational annotation")
+      elsif e["experiment_types"].include?("Computational annotation")
         e["types"] = [ "gene model" ]
-        else
+      else
         e["types"] = [ "RNA profiling" ] unless e["types"].find { |t| t =~ /chromatin/ }
       end
-      else
+    else
       e["types"] = [ "gene model" ]
     end
-    elsif e["types"].include?("transcript fragments") then
+  elsif e["types"].include?("transcript fragments") then
     e["types"].delete("transcript fragments")
     e["types"] = [ "transcription" ]
     e["experiment_types"].push("tiling array: RNA") if e["experiment_types"].delete("ChIP-chip")
   end
-  
+
   if e["experiment_types"].include?("RNA-seq") then
     # TODO: Do this better: use read lengths to detect transcription
     if e["project"] == "Lai" then
       e["types"] = [ "RNA profiling" ]
-      elsif e["project"] == "Celniker" && (e["lab"] == "Gingeras" || e["lab"] == "Brent") then
+    elsif e["project"] == "Celniker" && (e["lab"] == "Gingeras" || e["lab"] == "Brent") then
       e["types"] = [ "transcription" ]
-      else
+    else
       unless e["types"].include?("raw sequences") then
         e["types"] = [ "RNA profiling" ]
       end
@@ -1202,19 +1227,19 @@ def clean_up_feature_and_experiment_types(e)
       e["types"] = [ "transcription" ]
     end
   end
-  
+
   if e["project"] == "MacAlpine" then
     if e["experiment_types"].include?("tiling array: RNA") then
       e["experiment_types"] = [ "tiling array: DNA" ]
       e["types"] = [ "copy number variation" ]
-      elsif e["experiment_types"].include?("DNA-seq") then
+    elsif e["experiment_types"].include?("DNA-seq") then
       e["types"] = [ "copy number variation" ]
-      elsif e["xschema"] =~ /_725_/ then
+    elsif e["xschema"] =~ /_725_/ then
       # Bad case with no feature data; similar submissions were all deprecated
       e["types"] = [ "copy number variation" ]
     end
   end
-  
+
   if (e["types"].delete("chromatin binding sites") || e["types"].delete("chromatin binding site signal data")) then
     new_type = "chromatin"
     has_salt = e["compound"] && e["compound"].find { |compound| compound =~ /sodium chloride/ }
@@ -1234,12 +1259,12 @@ def clean_up_feature_and_experiment_types(e)
           e["antibody_names"][i] = "RNA polymerase II"
         end
       end
-      else
+    else
       new_type = "chromatin modification"
     end
     e["types"].push(new_type)
   end
-  
+
   if e["experiment_types"].include?("tiling array: DNA") && e["types"].include?("signal data") then
     if !e["types"].include?("replication timing") then
       e["types"] = [ "chromatin" ]
@@ -1255,11 +1280,11 @@ def clean_up_antibody_names(e)
   e["antibody_names"] = e["antibody_names"].map { |abname| ( matches = abname.match(/elegans\s+(\S+)\s/) ).nil? ? abname : matches[1] } # e.g. "C. elegans DPY-27 1-409 rabbit polyclonal antibody"
   e["antibody_names"] = e["antibody_names"].map { |abname| abname.gsub(/&reg;/, '') } # Who needs registered trademark symbols?
   e["antibody_names"] = e["antibody_names"].map { |abname| abname.gsub(/anti-?/i, '') } # Yes, thanks, it's an antibody
-  
+
   #One-offs
   if e["lab"] == "White" then
     e["antibody_names"] = e["antibody_names"].map { |abname| abname.gsub(/PolII/, 'Covance_8WG16:14861301') } # This has been fixed on the antibody page for future submissions
-    elsif e["lab"] == "Snyder" then
+  elsif e["lab"] == "Snyder" then
     e["antibody_names"] = e["antibody_names"].map { |abname| abname.gsub(/PolII/, 'Covance_8WG16:MMS-126R') } # This has been fixed on the antibody page for future submissions
   end  
   e["antibody_names"].each { |abn| abn = (abn =~ /RNA\s*pol.*\s*II/i ) ? "RNA polymerase II" : abn }
@@ -1268,11 +1293,11 @@ end
 
 def clean_up_antibody_targets(e)
   e["antibody_targets"].uniq!; e["antibody_targets"].compact!
-  
+
   e["antibody_targets"] = e["antibody_targets"].map { |abtarget| abtarget.gsub(/Enhanced Green Fluorescent Protein/, 'eGFP') }
   e["antibody_targets"] = e["antibody_targets"].map { |abtarget| (abtarget =~ /^n(\/?)a$/i) ? "none" : abtarget }
   e["antibody_targets"] = [] if ( e["antibody_targets"] == [ "none" ] && e["types"].include?("N/A (metadata only)") )
-  
+
   # One-offs
   e["antibody_targets"].each { |abtarget| abtarget.sub!(/nejire/, 'nej') }
   return e
@@ -1296,10 +1321,10 @@ def collect_files_for_experiments(exps,r)
   #TODO: this should be achieved by filtering on the existing e["files"] rather than a new SQL query
   print "Collecting files for experiments." ; $stdout.flush
   exps.each { |e|
-    
+
     e["gff"] = r.collect_gff(e["xschema"])
     e["sam"] = r.collect_sam(e["xschema"])
-    
+
     print "."; $stdout.flush
   }
   puts "Done."
@@ -1328,8 +1353,8 @@ def associate_files_and_attributes(exps, r)
     data = r.get_data_for_schema(e["xschema"])
     print "."; $stdout.flush
     get_properties_flag = (e["antibodies"].length > 0) ||
-    (e["GSM"].length > 0 ) ||
-    (e["labels"].length > 0)
+      (e["GSM"].length > 0 ) ||
+      (e["labels"].length > 0)
     get_properties_flag = true
     if (get_properties_flag) then
       rep_names_for_this_e = Array.new
@@ -1379,16 +1404,16 @@ def associate_files_and_attributes2(exps, r)
   #in order to properly determine the replicate numbers, we basically have to start with
   #GFF files (assuming they are always the end result)
   #if there's no files at all, then we'll have to use some other data type as the starting datum
-  
+
   print "Smartly associating result files with their attributes" ; $stdout.flush
   file_formats = { "raw-arrayfile" => ["CEL", "pair", "agilent", "raw_microarray_data_file"], "raw-seqfile" => ["FASTQ", "CSFASTA", "SFF"], "raw-other" => ["image"], "gene-model" => ["GFF3"], "WIG" => ["WIG", "Signal_Graph_File", "BED"], "alignment" => ["SAM", "BAM"] }
   #backward
   #file_process_order = ["gene-model", "WIG", "alignment", "raw-arrayfile", "raw-seqfile", "raw-other"]
   #forward
   file_process_order = ["raw-seq-file", "raw-arrayfile", "raw-other", "alignment", "WIG", "gene-model"]
-  
+
   file_counter = 0
-  
+
   exps.each { |e|
     data = r.get_data_for_schema(e["xschema"])
     print "."; $stdout.flush
@@ -1401,16 +1426,16 @@ def associate_files_and_attributes2(exps, r)
         files = e["files"]
         files.select{ |f| 
           f["heading"] =~ /Result|Array Data File|Anonymous/ }.select{ |f| 
-          file_formats[file_type].find_all{ |t| f["type"] =~ /#{Regexp.escape(t)}/ }.length > 0 }.each { |f|
-            #check to see if the antibodies, etc., have already been associated with this file
-            if f["properties"].nil? then
-              f,files = r.associate_sample_properties_with_files2(data, files, f, e["xschema"])
-              file_counter += 1
-            else
-              #assume that if the properties of the file are already set, then we can 
-            end
-          }
-        e["files"] = files
+            file_formats[file_type].find_all{ |t| f["type"] =~ /#{Regexp.escape(t)}/ }.length > 0 }.each { |f|
+              #check to see if the antibodies, etc., have already been associated with this file
+              if f["properties"].nil? then
+                f,files = r.associate_sample_properties_with_files2(data, files, f, e["xschema"])
+                file_counter += 1
+              else
+                #assume that if the properties of the file are already set, then we can 
+              end
+            }
+            e["files"] = files
       }
     else
       if e["experiment_types"].find {|et| et =~ /ChIP/} then
@@ -1514,17 +1539,17 @@ def get_sample_types_for_IP_experiments(exps, r)
         abs = f["properties"]["antibodies"] if f["properties"]
         if abs.nil? then
           st.push ""
-          elsif abs.empty? then
+        elsif abs.empty? then
           st.push "Input"
           empty_ab_counter += 1
-          else
+        else
           abs.each { |ab|
             name = ab["attributes"].find{|attr| attr["heading"] == "official name" }
             control = ab["attributes"].find { |attr| attr["species"] == "None-Control" }
             name.nil? ? "no name" : (name["value"] =~ /control/i)
             if (control || (name["value"] =~ /control|input/i)) then
               st.push "Input"
-              else
+            else
               st.push "ChIP"
             end
           }
@@ -1577,10 +1602,17 @@ def get_RNAsize_information(exps,r)
   exps.each { |e|
     print "."; $stdout.flush
     e["rna_size"] = r.get_rnasize(e["xschema"])
+    rna_size=e["specimens"].map{|sp|
+      sp["attributes"].find_all { |attr|
+        ((attr["heading"] =~ /RNA size/i)) }}.flatten.compact if !e["specimens"].nil?
+        if (rna_size.length > 0 ) then
+          e["rna_size"] = "small"
+        end  
   }
   puts "Done."
   return exps
 end
+
 
 def get_biological_validation_info(exps, r)
   # Figure out if it's a biological_validation_design experiment
@@ -1589,7 +1621,7 @@ def get_biological_validation_info(exps, r)
     designs = r.get_experimental_designs(e["xschema"])
     if designs.include?("biological_validation_design") then
       e["biological_validation"] = "Y"
-      else
+    else
       e["biological_validation"] = ""
     end
   }
@@ -1669,10 +1701,10 @@ def get_reaction_count_for_RACE_RTPCR_experiments(exps,r)
     next unless e["experiment_types"].include?("RACE") || e["experiment_types"].include?("RTPCR")
     reactions = r.get_number_of_features_of_type(e["xschema"], "mRNA")
     if (
-        !reactions || reactions.to_i == 0 ||
-        e["project"] == "Piano" # Piano submission(s?) find the genes post-experiment, so we do want ESTs
-        ) then
-      reactions = r.get_number_of_features_of_type(e["xschema"], "EST")
+      !reactions || reactions.to_i == 0 ||
+      e["project"] == "Piano" # Piano submission(s?) find the genes post-experiment, so we do want ESTs
+    ) then
+    reactions = r.get_number_of_features_of_type(e["xschema"], "EST")
     end
     e["reactions"] = reactions
     if e["project"] == "Waterston" && e["lab"] == "Green" then
@@ -1734,14 +1766,14 @@ end
 def replicates_by_extract(e)
   # *extract*
   if !e["all_data"].nil? then
-  extracts = e["all_data"].find_all { |d| d["heading"] =~ /extract\b/i || d["name"] =~ /extract\b/i }.reject { |d| d["value"] == nil || d["value"].empty? }
-  reps = 0
-  extracts.uniq_by { |d| [ d["heading"], d["name"] ] }.map { |d| [ d["heading"], d["name"] ] }.each { |unq|
-    unq = extracts.find_all { |d| d["heading"] == unq[0] && d["name"] == unq[1] }.map { |d| d["value"].sub(/ (Nucleosomes|Pull-down|Input)/, '').sub(/^(Extract|Control)\d$/, '\1').sub(/(_GEL|_BULK)$/, '') }.uniq.compact.size
-    reps = [reps, unq].max
-  }
-  #  reps = extracts.map { |d| d["value"].sub(/ (Nucleosomes|Pull-down|Input)/, '').sub(/^(Extract|Control)\d$/, '\1').sub(/(_GEL|_BULK)$/, '') }.uniq.compact.size
-  e["replicates"] = reps if reps > 0
+    extracts = e["all_data"].find_all { |d| d["heading"] =~ /extract\b/i || d["name"] =~ /extract\b/i }.reject { |d| d["value"] == nil || d["value"].empty? }
+    reps = 0
+    extracts.uniq_by { |d| [ d["heading"], d["name"] ] }.map { |d| [ d["heading"], d["name"] ] }.each { |unq|
+      unq = extracts.find_all { |d| d["heading"] == unq[0] && d["name"] == unq[1] }.map { |d| d["value"].sub(/ (Nucleosomes|Pull-down|Input)/, '').sub(/^(Extract|Control)\d$/, '\1').sub(/(_GEL|_BULK)$/, '') }.uniq.compact.size
+      reps = [reps, unq].max
+    }
+    #  reps = extracts.map { |d| d["value"].sub(/ (Nucleosomes|Pull-down|Input)/, '').sub(/^(Extract|Control)\d$/, '\1').sub(/(_GEL|_BULK)$/, '') }.uniq.compact.size
+    e["replicates"] = reps if reps > 0
   end
   return e
 end
@@ -1793,7 +1825,7 @@ def replicates_by_pool_values(e,r)
   end
   return e
 end
-    
+
 def replicates_by_result_file(e)
   # Result File
   if e["replicates"].nil? then
@@ -1820,7 +1852,7 @@ def replicates_by_geo_id(e)
   end
   return e
 end
-    
+
 def get_replicate_count_for_experiments(exps,r)
   print "Getting replicate counts for experiments" ; $stdout.flush
   exps.each { |e|
@@ -1834,7 +1866,7 @@ def get_replicate_count_for_experiments(exps,r)
     e = replicates_by_geo_id(e)
     e["replicates"] = "COMPUTATIONAL ANNOTATION" if e["experiment_types"].include?("Computational annotation")
     e["replicates"] = "SAMPLE CREATION" if e["experiment_types"].find { |t| t =~ /Sample creation/i }
-      
+
     if (e["replicates"].nil? || e["replicates"] == 0 || e["replicates"] == "MISSING") then
       puts e["xschema"]
       puts "  No replicate info! Continuing..."
@@ -1870,41 +1902,46 @@ def clean_up_labels(exps)
 end
 
 def do_everything_to_update_exps (exps,r,dbh)
-  puts "Doing everything to update #{exps.length} exps without writing interim breakpoints..."
-  exps = get_geo_ids_from_NCBI(exps)
-  exps = get_organisms(exps, r)
-  exps = get_read_counts(exps, r)
-  exps = get_reagents(exps, r)  #this can take awhile              
-  exps = get_project_and_lab(exps, r)            
-  exps = get_protocol_types(exps, r)          
-  exps = get_specimens_in_referenced_submissions(exps, r)
-  exps = process_specimens(exps,r)
-  exps = get_dnase_treatments(exps)
-  exps = get_geo_ids_from_chado(exps,r)
-  exps = get_experiment_types(exps, r)
-  exps = process_antibodies_for_experiments(exps,r)
-  exps = get_submission_status(exps, dbh)
-  puts "#{exps.size} total projects in Chado processed"
+  if (exps.length > 0) then
+    puts "Doing everything to update #{exps.length} exps without writing interim breakpoints..."
+    exps = get_geo_ids_from_NCBI(exps)
+    exps = get_organisms(exps, r)
+    exps = get_read_counts(exps, r)
+    exps = get_reagents(exps, r)  #this can take awhile              
+    exps = get_project_and_lab(exps, r)            
+    exps = get_protocol_types(exps, r)          
+    exps = get_specimens_in_referenced_submissions(exps, r)
+    exps = process_specimens(exps,r)
+    exps = get_dnase_treatments(exps)
+    exps = get_geo_ids_from_chado(exps,r)
+    #exps = get_experiment_types_simple(exps, r)
+    exps = get_experiment_types(exps, r)
+    exps = get_data_types(exps,r)
+    exps = process_antibodies_for_experiments(exps,r)
+    exps = get_submission_status(exps, dbh)
+    puts "#{exps.size} total projects in Chado processed"
 
-  exps = get_microarray_sizes(exps)
-  exps = collect_files_for_experiments(exps,r)
-  exps = get_root_file_paths(exps)
-  exps = associate_files_and_attributes(exps, r)  #this can take awhile
-  exps = get_GEO_ids_from_files(exps)
-  exps = get_sample_types_for_IP_experiments(exps, r)
-  exps = get_feature_counts_for_CAGE_or_cDNA_experiments(exps, r)
-  exps = get_RNAsize_information(exps,r)
+    exps = get_microarray_sizes(exps)
+    exps = collect_files_for_experiments(exps,r)
+    exps = get_root_file_paths(exps)
+    exps = associate_files_and_attributes(exps, r)  #this can take awhile
+    exps = get_GEO_ids_from_files(exps)
+    exps = get_sample_types_for_IP_experiments(exps, r)
+    exps = get_feature_counts_for_CAGE_or_cDNA_experiments(exps, r)
+    exps = get_RNAsize_information(exps,r)
 
-  exps = get_biological_validation_info(exps, r)
-  exps = get_genome_build(exps)
-  #exps = get_submissions_not_in_chado(exps,r,dbh)
-  exps = figure_out_project_version(exps,r)
-  exps = get_reaction_count_for_RACE_RTPCR_experiments(exps,r)
-  exps = get_missing_metadata_for_deprecated_experiments(exps,r)
-  exps = get_replicate_count_for_experiments(exps,r)
-  exps = clean_up_labels(exps)
-
-  puts "Done with everything."
+    exps = get_biological_validation_info(exps, r)
+    exps = get_genome_build(exps)
+    #exps = get_submissions_not_in_chado(exps,r,dbh)
+    exps = figure_out_project_version(exps,r)
+    exps = get_reaction_count_for_RACE_RTPCR_experiments(exps,r)
+    exps = get_missing_metadata_for_deprecated_experiments(exps,r)
+    exps = get_replicate_count_for_experiments(exps,r)
+    exps = clean_up_labels(exps)
+    puts "Done with everything."
+  else
+    puts "No exps need updating."
+  end
   return exps
 end
 
@@ -1958,57 +1995,57 @@ def report_by_comparison (r, dbh, user_specified_comparison_dir)
     all_changed_project_ids = (changed_project_ids + changed_chadoxml_ids).uniq
     puts "Found #{all_changed_project_ids.length} submissions with changes."
 
-  old_exp_ids = old_exps.map{|e| e["xschema"].match(/_(\d+)_/)[1].to_i }
+    old_exp_ids = old_exps.map{|e| e["xschema"].match(/_(\d+)_/)[1].to_i }
 
-  #get the list of experiments in chado with bare bones details
-  avail_exps = r.get_available_experiments
-  avail_exp_ids = avail_exps.map{|e| e["xschema"].match(/_(\d+)_/)[1].to_i }
-  puts "Found #{avail_exps.length} experiments in chado"
+    #get the list of experiments in chado with bare bones details
+    avail_exps = r.get_available_experiments
+    avail_exp_ids = avail_exps.map{|e| e["xschema"].match(/_(\d+)_/)[1].to_i }
+    puts "Found #{avail_exps.length} experiments in chado"
 
-  #compare the avail_exps with the old_exps to see what additional things we need to fetch
-  puts "new exp ids: #{(avail_exp_ids - old_exp_ids).join(",")} out of #{avail_exp_ids.length} avail exps"
+    #compare the avail_exps with the old_exps to see what additional things we need to fetch
+    puts "new exp ids: #{(avail_exp_ids - old_exp_ids).join(",")} out of #{avail_exp_ids.length} avail exps"
 
-  unchanged_exps = old_exps.clone
-  changed_project_ids.map{|id|
-    unchanged_exps.delete_if{|e| e["xschema"].match(/_(\d+)_/)[1].to_i == id}
-  }
+    unchanged_exps = old_exps.clone
+    changed_project_ids.map{|id|
+      unchanged_exps.delete_if{|e| e["xschema"].match(/_(\d+)_/)[1].to_i == id}
+    }
 
-  puts "Setting aside #{unchanged_exps.length} unchanged submissions since #{previous_breakpoint_date.strftime("%F")} to merge."
+    puts "Setting aside #{unchanged_exps.length} unchanged submissions since #{previous_breakpoint_date.strftime("%F")} to merge."
 
-  #project_ids_to_update = (changed_project_ids+(avail_exp_ids - old_exp_ids)).uniq
-  project_ids_to_update = changed_project_ids.uniq
+    #project_ids_to_update = (changed_project_ids+(avail_exp_ids - old_exp_ids)).uniq
+    project_ids_to_update = changed_project_ids.uniq
 
-  puts "Updating #{project_ids_to_update.length} submissions: #{project_ids_to_update.sort.join(",")}"
+    puts "Updating #{project_ids_to_update.length} submissions: #{project_ids_to_update.sort.join(",")}"
 
 
-  #select the experiments from those available that have changed since last time
-  changed_exps = Array.new
-  project_ids_to_update.map{|id|
-    changed_exps += [avail_exps.find{|e| e["xschema"].match(/_(\d+)_/)[1].to_i == id}]
-  }
-  changed_exps.compact!
+    #select the experiments from those available that have changed since last time
+    changed_exps = Array.new
+    project_ids_to_update.map{|id|
+      changed_exps += [avail_exps.find{|e| e["xschema"].match(/_(\d+)_/)[1].to_i == id}]
+    }
+    changed_exps.compact!
 
-  print "Getting feature types for #{changed_exps.length} submissions"
-  changed_exps.each do |experiment|
-    print "."; $stdout.flush
-    experiment["types"] = r.get_feature_types(experiment["xschema"])
-  end
-  puts "Done."
+    print "Getting feature types for #{changed_exps.length} submissions"
+    changed_exps.each do |experiment|
+      print "."; $stdout.flush
+      experiment["types"] = r.get_feature_types(experiment["xschema"])
+    end
+    puts "Done."
 
-  changed_exps.delete_if { |e|
-    # Ignore schema 0
-    e["xschema"] =~ /^modencode_experiment_(0)_data$/ #||
-  }
+    changed_exps.delete_if { |e|
+      # Ignore schema 0
+      e["xschema"] =~ /^modencode_experiment_(0)_data$/ #||
+    }
 
-  exps = do_everything_to_update_exps(changed_exps,r,dbh)
-  #do all the other stuff to changed_exps
-  #merge back with unchanged_exps
-  exps += unchanged_exps
+      exps = do_everything_to_update_exps(changed_exps,r,dbh)
+      #do all the other stuff to changed_exps
+      #merge back with unchanged_exps
+      exps += unchanged_exps
 
-  #well, this is really getting only new submissions in the pipeline that weren't in the previous run
-  exps = get_submissions_not_in_chado(exps,r,dbh)
+      #well, this is really getting only new submissions in the pipeline that weren't in the previous run
+      exps = get_submissions_not_in_chado(exps,r,dbh)
 
-  puts "Final submission count:  #{exps.length}"
+      puts "Final submission count:  #{exps.length}"
 
   else
     puts "Can't find previous breakpoint file. Will run a fresh copy."
@@ -2038,35 +2075,35 @@ user_specified_comparison_dir = ""
 
 opts.each do |opt, arg|
   case opt
-    when '--help'
-      print_help()
-      #RDoc::usage
-      exit
-    when '--full'
-      run_full_report = true
-      compare_to_previous_run = false
-      use_breakpoint = false
-    when '--use-breakpoint'
-      if !arg.empty?
-        user_specified_breakpoint_file = arg
-        if !File.exist?(user_specified_breakpoint_file) then
-          puts "File #{user_specified_breakpoint_file} doesn't exist.  Exiting."
-          exit
-        end
+  when '--help'
+    print_help()
+    #RDoc::usage
+    exit
+  when '--full'
+    run_full_report = true
+    compare_to_previous_run = false
+    use_breakpoint = false
+  when '--use-breakpoint'
+    if !arg.empty?
+      user_specified_breakpoint_file = arg
+      if !File.exist?(user_specified_breakpoint_file) then
+        puts "File #{user_specified_breakpoint_file} doesn't exist.  Exiting."
+        exit
       end
-      compare_to_previous_run = false
-    when '--compare_to'
-      if !arg.empty?
-        user_specified_comparison_dir = arg
-        if !File.exist?(user_specified_comparison_dir) then
-          puts "File #{user_specified_breakpoint_file} doesn't exist.  Exiting."
-          exit
-        end
-      end
-         
-      compare_to_previous_run = true
-      use_breakpoint = false
     end
+  compare_to_previous_run = false
+  when '--compare_to'
+    if !arg.empty?
+      user_specified_comparison_dir = arg
+      if !File.exist?(user_specified_comparison_dir) then
+        puts "File #{user_specified_breakpoint_file} doesn't exist.  Exiting."
+        exit
+      end
+    end
+
+  compare_to_previous_run = true
+  use_breakpoint = false
+  end
 end
 
 #############################
@@ -2165,6 +2202,7 @@ else
               exps = get_dnase_treatments(exps)
               exps = get_geo_ids_from_chado(exps,r)
               exps = get_experiment_types(exps, r)
+              exps = get_data_types(exps, r)
               exps = process_antibodies_for_experiments(exps,r)
               exps = get_submission_status(exps, dbh)
 
