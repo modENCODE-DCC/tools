@@ -25,6 +25,7 @@ MAKE_BREAKPOINTS = true #a simple flag to trigger making breakpoints
 USE_PREVIOUS_RUN = true
 CHECK_CHANGES_AGAINST_PREVIOUS_RUN = true #false
 HOME_DIR = "/modencode/raw/tools/reporter"
+BREAKPOINT_DIR = File.join(HOME_DIR, "breakpoints")
 
 module Enumerable
   def uniq_by
@@ -112,8 +113,9 @@ def check_changes_to_chadoxml(old_exps,old_date)
 end
 
 def get_most_recent_breakpoint_dir()
-  breakpoint_dirs = Dir.foreach(HOME_DIR).select{|x| x.match(/bps/)}
-  return breakpoint_dirs.select{|x| File.exist?(File.join(HOME_DIR,x,"breakpoint10.dmp"))}.sort{|x,y| File.mtime(File.join(HOME_DIR,x)) <=> File.mtime(File.join(HOME_DIR,y))}.last
+  breakpoint_dirs = Dir.foreach(File.join(BREAKPOINT_DIR)).select{|x| x.match(/bps/)}
+  d=breakpoint_dirs.select{|x| File.exist?(File.join(BREAKPOINT_DIR,x,"breakpoint10.dmp"))}.sort{|x,y| File.mtime(File.join(BREAKPOINT_DIR,x)) <=> File.mtime(File.join(BREAKPOINT_DIR,y))}.last
+  return (File.join(BREAKPOINT_DIR, d))
 end
 
 
@@ -218,7 +220,7 @@ end
 
 def load_breakpoint(which_breakpoint, breakpoint_file_path='.')
   breakpoint_file = "breakpoint#{which_breakpoint}.dmp"
-  breakpoint_file = File.join(HOME_DIR,breakpoint_file_path, breakpoint_file)
+  breakpoint_file = File.join(breakpoint_file_path, breakpoint_file)
   exps = load_breakpoint_file(breakpoint_file)
   return exps
 end
@@ -1982,6 +1984,7 @@ def report_by_comparison (r, dbh, user_specified_comparison_dir)
     puts "Using user-specified directory for comparison: #{user_specified_comparison_dir}"
   else
     previous_breakpoint_dir = get_most_recent_breakpoint_dir()
+    puts "Using most-recent breakpoint dir for comparison: #{previous_breakpoint_dir}"
   end
   dm=previous_breakpoint_dir.match(/bps.(\d{4})-(\d\d)-(\d\d)/)
   #parse the date
@@ -2140,37 +2143,37 @@ else
   else
 
     if (File.exists?(File.join(HOME_DIR, 'breakpoint10.dmp')) && !run_full_report) then
-      exps = load_breakpoint(10)
+      exps = load_breakpoint(10, HOME_DIR)
     else
       if (File.exists?(File.join(HOME_DIR,'breakpoint9.dmp')) && !run_full_report) then
-        exps = load_breakpoint(9)
+        exps = load_breakpoint(9, HOME_DIR)
       else
         if (File.exists?(File.join(HOME_DIR,'breakpoint8.dmp')) && !run_full_report) then
-          exps = load_breakpoint(8)
+          exps = load_breakpoint(8, HOME_DIR)
         else
           if (File.exists?(File.join(HOME_DIR,'breakpoint7.dmp')) && !run_full_report) then
-            exps = load_breakpoint(7)
+            exps = load_breakpoint(7, HOME_DIR)
           else
             if (File.exists?(File.join(HOME_DIR,'breakpoint6.dmp')) && !run_full_report) then
-              exps = load_breakpoint(6)
+              exps = load_breakpoint(6, HOME_DIR)
             else
               if (File.exists?(File.join(HOME_DIR,'breakpoint5.dmp')) && !run_full_report) then
-                exps = load_breakpoint(5)
+                exps = load_breakpoint(5, HOME_DIR)
               else
                 if (File.exists?(File.join(HOME_DIR,'breakpoint4.dmp')) && !run_full_report) then
-                  exps = load_breakpoint(4)
+                  exps = load_breakpoint(4, HOME_DIR)
                 else
                   if (File.exists?(File.join(HOME_DIR,'breakpoint3.dmp')) && !run_full_report) then
-                    exps = load_breakpoint(3)
+                    exps = load_breakpoint(3, HOME_DIR)
                   else
                     if (File.exists?(File.join(HOME_DIR,'breakpoint2.dmp')) && !run_full_report) then
-                      exps = load_breakpoint(2)
+                      exps = load_breakpoint(2, HOME_DIR)
                     else
                       if (File.exists?(File.join(HOME_DIR,'breakpoint1.dmp')) && !run_full_report) then
-                        exps = load_breakpoint(1)
+                        exps = load_breakpoint(1, HOME_DIR)
                       else
                         if (File.exists?(File.join(HOME_DIR,'breakpoint0.dmp')) && !run_full_report) then
-                          exps = load_breakpoint(0)
+                          exps = load_breakpoint(0, HOME_DIR)
                         else
                           puts "No breakpoints found.  Starting Fresh."
                           print "Getting experiments" ; $stdout.flush
