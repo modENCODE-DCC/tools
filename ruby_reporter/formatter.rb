@@ -113,7 +113,8 @@ class Formatter
              "Filename <ReplicateSetNum>",
              "Replicate Names",
              "GEO ids",
-             "SRA ids"
+             "SRA ids",
+             "RNA size"
     ] + extra_cols.keys
 
     if block_given? then
@@ -171,7 +172,8 @@ class Formatter
         cols.push((e["species"].nil? || e["species"].empty?) ? e["organisms"].map{ |o| "#{o["genus"]} #{o["species"]}" }.sort.join(", ") : e["species"].sort.join(","))
         cols.push e["build"].nil? ? "" : e["build"]
         cols.push e["status"]
-        cols.push e["types"].join(", ")
+        cols.push(e["data_type"].nil? ? "UNDEFINED" : e["data_type"].join(","))
+        #cols.push e["types"].join(", ")
         cols.push e["experiment_types"].join(", ")
         cols.push e["tissue"].join(", ")
         cols.push e["strain"].map { |s|
@@ -208,6 +210,7 @@ class Formatter
         cols.push "#{f["properties"].nil? ? "" : f["properties"]["rep"].join(",")}"
         cols.push "#{f["properties"].nil? ? "" : f["properties"]["GEO id"].join(",")}"
         cols.push "#{f["properties"].nil? ? "" : f["properties"]["SRA id"].join(",")}"
+        cols.push "#{e["rna_size"]}"
         extra_cols.values.each { |colname| cols.push e[colname] }
           
         if block_given? then
@@ -382,8 +385,10 @@ class Formatter
     factors.push "Version=#{cols[col_index["Version"]]}" if cols[col_index["Version"]] && cols[col_index["Version"]].to_i > 1
     factors.push "Reactions=#{cols[col_index["Reactions"]]}" if cols[col_index["Reactions"]] && cols[col_index["Reactions"]].to_i > 1
     factors.push "Features=#{cols[col_index["Features"]]}" if cols[col_index["Features"]] && cols[col_index["Features"]].to_i > 1
-    factors.push "RNAsize=#{cols[col_index["RNAsize"]].join(",")}" if cols[col_index["RNAsize"]] && cols[col_index["RNAsize"]].length > 0
-return factors
+    factors.push "RNAsize=#{cols[col_index["RNAsize"]]}" if cols[col_index["RNAsize"]] && cols[col_index["RNAsize"]].length > 0
+    #factors.push "RNAsize=#{cols[col_index["RNAsize"]].join(",")}" if cols[col_index["RNAsize"]] && cols[col_index["RNAsize"]].length > 0
+    
+    return factors
   end
 
   def self.nih_sub_status(s)            
@@ -537,7 +542,7 @@ return factors
     File.open(filename, "w") { |f|
       header = true
       #col_order = ["DCC id", "Title", "Data File", "Data Filepath", "Level 1 <organism>", "Level 2 <Target>", "Level 3 <Technique>", "Level 4 <File Format>", "Filename <Factor>", "Filename <Condition>", "Filename <Technique>", "Filename <Modencode ID>", "factor", "Strain", "Cell Line", "Devstage", "Tissue", "other conditions", "PI", "GEO/SRA IDs", "Status"]
-     col_order = ["DCC id", "Title", "Data File", "OICR File Path", "Level 1 <organism>", "Level 2 <Target>", "Level 3 <Technique>", "Level 4 <File Format>", "Filename <Factor>", "Filename <Condition>", "Filename <Technique>", "Filename <ReplicateSetNum>", "Filename <ChIP>", "Filename <label>", "Filename <Build>", "Filename <Modencode ID>", "Uniform filename", "Extensional Uniform filename", "factor", "Strain", "Cell Line", "Devstage", "Tissue", "other conditions", "PI", "GEO/SRA IDs", "Status", "Sample Type", "Data Filepath", "Replicate Names", "GEO ids", "SRA ids"]
+     col_order = ["DCC id", "Title", "Data File", "OICR File Path", "Level 1 <organism>", "Level 2 <Target>", "Level 3 <Technique>", "Level 4 <File Format>", "Filename <Factor>", "Filename <Condition>", "Filename <Technique>", "Filename <ReplicateSetNum>", "Filename <ChIP>", "Filename <label>", "Filename <Build>", "Filename <Modencode ID>", "Uniform filename", "Extensional Uniform filename", "factor", "Strain", "Cell Line", "Devstage", "Tissue", "other conditions", "PI", "GEO/SRA IDs", "Status", "Sample Type", "Data Filepath", "Replicate Names", "GEO ids", "SRA ids", "RNA size"]
       col_index = Hash.new
       Formatter::format_files(exps, false, {}) { |cols|
         if header then #the header line only
@@ -573,30 +578,43 @@ return factors
             elsif k == "Filename <Factor>"  then
               factor = cols[col_index["Antibody Name"]] unless col_index["Antibody Name"].nil?
               data_type = cols[col_index["Data Type"]]
-              if ((data_type == "RNA profiling") || (data_type == "transcription") || (data_type == "raw sequences" ) ) then
-                factor = "RNA"  
-                #TODO: inspect RNAsize to determine if it is smallRNA
-              elsif ((data_type == "ORC") || (data_type == "origins of replication")) then
+              if ((data_type =~ /RNA expression profiling/) || (data_type == "RNA profiling") || (data_type == "transcription") || (data_type == "raw sequences" ) || (data_type == "RACE") || (data_type == "RTPCR")) then
+                if (cols[col_index["RNA size"]] == "<200bp" || cols[col_index["RNA size"]] == "small") then
+                  factor = "smallRNA"
+                else
+                  factor = "RNA"  
+                end
+              elsif ((data_type == "ORC") || (data_type == "origins of replication") || (data_type == "Origins of Replication")) then
                 factor = "Replication-Origin"
-              elsif ((data_type == "copy number variation")) then
+              elsif ((data_type == "copy number variation") || (data_type == "Copy Number Variation") ) then
                 factor = "Replication-Copy-Number"
-              elsif ((data_type == "replication timing")) then
+              elsif ((data_type == "replication timing") || (data_type == "Replication Timing") ) then
                 factor = "Replication-Timing"
+              elsif ((data_type == "Chromatin structure")) then
+                factor = "Chromatin"
+              elsif ((data_type =~ /Gene Structure - mRNA/)) then
+                factor = "RNA"
+              elsif ((data_type =~ /Gene Structure - ncRNA/)) then
+                factor = "smallRNA"
               end
               line.push factor
             elsif k == "factor" then
               factor = cols[col_index["Target"]]
               data_type = cols[col_index["Data Type"]]
-              if ((data_type == "RNA profiling") || (data_type == "transcription") || (data_type == "raw sequences" ) ) then
-                factor = "RNA"  
-                #TODO: inspect RNAsize to determine if it is smallRNA
-              elsif ((data_type == "ORC") || (data_type == "origins of replication")) then
-                factor = "Replication-Origin"
-              elsif ((data_type == "copy number variation")) then
-                factor = "Replication-Copy-Number"
-              elsif ((data_type == "replication timing")) then
-                factor = "Replication-Timing"
+              if ((data_type =~ /RNA expression profiling/)) then
+                factor = "RNA"
               end
+              #puts "data_type == #{data_type}"
+              #if ((data_type =~ "RNA expression profiling") || (data_type == "RNA profiling") || (data_type == "transcription") || (data_type == "raw sequences" ) ) then
+              #  factor = "RNA"  
+                #TODO: inspect RNAsize to determine if it is smallRNA
+              #elsif ((data_type == "ORC") || (data_type == "origins of replication")) then
+              #  factor = "Replication-Origin"
+              #elsif ((data_type == "copy number variation")) then
+              #  factor = "Replication-Copy-Number"
+              #elsif ((data_type == "replication timing")) then
+              #  factor = "Replication-Timing"
+              #end
               line.push factor
             elsif k == "other conditions" then
               treatments = Array.new
