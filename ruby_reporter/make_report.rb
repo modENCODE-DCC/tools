@@ -1606,7 +1606,7 @@ def get_RNAsize_information(exps,r)
       sp["attributes"].find_all { |attr|
         ((attr["heading"] =~ /RNA size/i)) }}.flatten.compact if !e["specimens"].nil?
         if (rna_size.length > 0 ) then
-          e["rna_size"] = "small"
+          e["rna_size"] += ["small"]
         end  
   }
   puts "Done."
