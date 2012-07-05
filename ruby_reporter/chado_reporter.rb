@@ -122,6 +122,19 @@ class ChadoReporter
     end
   end
 
+ def get_data_type(schema)
+    sth = @dbh.prepare("SELECT value FROM #{schema}.experiment_prop WHERE name = 'Data Type'")
+    sth.execute
+    ret = sth.fetch_array
+    sth.finish
+    if ret.nil?
+      return []
+    else
+      return [ ret[0] ]
+    end
+  end
+ 
+
   def get_read_counts_for_schema(schema)
     sth = @dbh.prepare("SELECT value FROM #{schema}.experiment_prop WHERE name = 'Total Read Count'")
     sth.execute
