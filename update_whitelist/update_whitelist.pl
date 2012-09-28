@@ -4,8 +4,8 @@ use DBI;
 use URI::Escape qw();
 use strict;
 
-my $dbh_modencode = DBI->connect("dbi:Pg:dbname=modencode_chado;host=heartbroken.lbl.gov", "db_public", "ir84#4nm", { AutoCommit => 1 }) or die "Couldn't get modENCODE database $!";
-my $dbh_wiki = DBI->connect("dbi:mysql:database=modencode_wiki;host=localhost", "modencode", "modencode+++") or die "Couldn't get Wiki database $!";
+my $dbh_modencode = DBI->connect("dbi:Pg:dbname=modencode_chado;host=heartbroken.lbl.gov", "db_public", "pw", { AutoCommit => 1 }) or die "Couldn't get modENCODE database $!";
+my $dbh_wiki = DBI->connect("dbi:mysql:database=modencode_wiki;host=localhost", "modencode", "pw") or die "Couldn't get Wiki database $!";
 
 $dbh_modencode->do("DROP SCHEMA IF EXISTS merged_tables CASCADE");
 $dbh_modencode->do("CREATE SCHEMA merged_tables");

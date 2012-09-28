@@ -27,7 +27,7 @@ class ChadoReporter
     # Connect to whatever chado database the pipeline is speaking to
     dbinfo = self.chado_database
     @dbh = DBI.connect(dbinfo[:dsn], dbinfo[:user], dbinfo[:password])
-    # @dbh = DBI.connect("dbi:Pg:dbname=modencode_chado;host=modencode-db1;port=5432", "db_public", "ir84#4nm") unless @dbh
+    # @dbh = DBI.connect("dbi:Pg:dbname=modencode_chado;host=modencode-db1;port=5432", "db_public", "pw") unless @dbh
   end
   def dbh
     @dbh

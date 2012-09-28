@@ -12,7 +12,7 @@ my %conf = (
   "dbname" => "FB2009_07",
   "host" => "awol.lbl.gov",
   "username" => "db_public",
-  "password" => "limecat",
+  "password" => "pw",
 );
 
 autoflush STDERR 1;

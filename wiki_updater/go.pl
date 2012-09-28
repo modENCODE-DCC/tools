@@ -6,7 +6,7 @@ use ModENCODE::WikiUpdate;
 my $updater = new ModENCODE::WikiUpdate({
     # TODO: You should change the login credentials to a user from your lab
     'username' => 'Validator_Robot', 
-    'password' => 'vdate_358',
+    'password' => 'pw',
     # TODO: smaug.aradine.com is the sandbox, wiki.modencode is the official wiki
     'wiki_path' => 'smaug.aradine.com/project',
     #'wiki_path' => 'wiki.modencode.org/project',

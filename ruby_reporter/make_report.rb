@@ -2119,7 +2119,7 @@ r.set_schema("reporting")
 
 puts "Initializing pipeline database connection"
 dbinfo = pipeline_database
-#dbh = DBI.connect("dbi:Pg:dbname=pipeline_dev;host=modencode-db1;port=5432", "db_public", "ir84#4nm")
+#dbh = DBI.connect("dbi:Pg:dbname=pipeline_dev;host=modencode-db1;port=5432", "db_public", "pw")
 dbh = DBI.connect(dbinfo[:dsn], dbinfo[:user], dbinfo[:password]) 
 
 #############################
