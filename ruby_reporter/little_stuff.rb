@@ -567,6 +567,29 @@ def get_data_types(exps, r)
   return exps
 end
 
+def get_dep_sup_ids_and_reasons(exps,dbh)
+  print "Getting deprecation reasons..." ; $stdout.flush
+  sth = dbh.prepare("SELECT status, deprecated_project_id, superseded_project_id, created_at, updated_at, deprecation_reason, supercession_reason FROM projects WHERE id = ?")
+  exps.each { |e|
+    print "." ; $stdout.flush
+    pipeline_id = e["xschema"].match(/_(\d+)_/)[1].to_i
+    sth.execute(pipeline_id)
+    (status, deprecated, superseded, created_at, updated_at,deprecation_reason,supercession_reason) = sth.fetch_array
+    if e["deprecated"] then
+      if (deprecated == "0") then
+        e["deprecation_reason"] = deprecation_reason.nil? ? "UNSPECIFIED RETRACTION" : deprecation_reason
+      else
+        e["deprecation_reason"] = deprecation_reason.nil? ? "UNSPECIFIED deprecation" : deprecation_reason
+      end
+    end
+    if e["superseded"] then
+      e["supercession_reason"] = supercession_reason.nil? ? "UNSPECIFIED supercession" : supercession_reason
+    end
+  }
+  sth.finish
+  return exps
+end
+
 
 ################################
 #            MAIN              #
@@ -580,7 +603,8 @@ MAKE_BREAKPOINTS = true #a simple flag to trigger making breakpoints
 #TESTING_IDS = [21,22,23,24,27,34,35,36,37,40,43,44,48,49,50,51,52,53,54,55,56,57,58,59,60,93,94,95]
 #TESTING_IDS = [416,401,411,605,606,654,710,741,778,856,409,375,338,330]
 #TESTING_IDS = [401,416]
-TESTING_IDS = [774,4208,4215,4214,4322,4290,4291]  #small RNAs
+#TESTING_IDS = [774,4208,4215,4214,4322,4290,4291]  #small RNAs
+TESTING_IDS = [3720,3913,740,2617,923,642,2440,2886,2266]
 #TESTING_IDS = [584,2866, 2867,2868,342,3420,790,791,910,897,973,4237]
 #TESTING_IDS = [3420]
 STARTING_BREAKPOINT = 10
@@ -594,7 +618,7 @@ r.set_schema("reporting")
 dbinfo = pipeline_database
 dbh = DBI.connect(dbinfo[:dsn], dbinfo[:user], dbinfo[:password])
 
-exps = load_breakpoint(10, "bps.2012-05-14")
+exps = load_breakpoint(10, "/modencode/raw/tools/reporter/breakpoints/bps.2012-07-22")
 
 exps = select_subset(exps, TESTING_IDS)
 #avail_schemas = r.get_available_experiments.map{|ae| ae["xschema"]}
@@ -608,11 +632,13 @@ exps = select_subset(exps, TESTING_IDS)
 
 #puts "#{avail_exps.length} available for updating}"
 #puts "#{unavail_exps.length} unavailable for updating}"
-exps = get_RNAsize_information(exps, r)
+#exps = get_RNAsize_information(exps, r)
 #exps = get_RNAsize_information(avail_exps, r)
 #exps = get_data_types(avail_exps,r)
 #exps += unavail_exps
 #File.open("new_testin_breakpoint.dmp", 'w') { |f| Marshal.dump(exps, f) }
+
+exps = get_dep_sup_ids_and_reasons(exps,dbh)
 
 
 #exps = get_experiment_types(exps,r)
@@ -639,14 +665,20 @@ print "Sorting..."
 exps.sort! { |e1, e2| e1["xschema"].match(/_(\d+)_/)[1].to_i <=> e2["xschema"].match(/_(\d+)_/)[1].to_i }
 puts "Done."
 
+exps.each { |e|
+  subid = e["xschema"].match(/_(\d+)_/)[1]
+  puts "#{subid}\t#{e["deprecation_reason"]}\t#{e["supercession_reason"]}\t"
+}
+
 #print_rep_numbers(exps)
 #print_files(exps)
 #print_geo_ids(exps)
 
-exps.each { |e|
-  subid = e["xschema"].match(/_(\d+)_/)[1]
-  puts "#{subid}\t#{e["types"].join(",")}\t#{e["experiment_types"].join(",")}\t#{e["data_type"]}\t#{e["rna_size"]}"
-}
+#print exp_data_types_and_rnasize
+#exps.each { |e|
+#  subid = e["xschema"].match(/_(\d+)_/)[1]
+#  puts "#{subid}\t#{e["types"].join(",")}\t#{e["experiment_types"].join(",")}\t#{e["data_type"]}\t#{e["rna_size"]}"
+#}
 
 
 

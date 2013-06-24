@@ -128,9 +128,9 @@ class Formatter
       subid = e["xschema"].match(/_(\d+)_/)[1]
       subid += " deprecated by #{e["deprecated"]}" if e["deprecated"]
       subid += " superseded by #{e["superseded"]}" if e["superseded"]
+      next if e["status"] != "released"
       e["status"] = "superseded" if e["superseded"]
       e["status"] = "deprecated" if e["deprecated"]
-      next if e["status"] != "released"
       files = e["files"]
       
       if files.nil? then
@@ -499,6 +499,40 @@ class Formatter
     }
   end
 
+  def self.format_replacements_by_filename(exps, filename = "replacement_file_list.csv")
+    col_order = ["Submission ID", "Data File", "Replaced by", "Reason"]
+    col_index = Hash.new
+    File.open(filename, "w") { |f|
+
+      header = true
+      Formatter::format_files(exps, true, {"Reason" => "change_reason"}) { |cols|
+        if header then #the header line only
+          cols.each_index { |idx| col_index[cols[idx]] = idx}
+          f.puts col_order.join("\t")
+          header = false
+        else #the content of the file
+          line = Array.new
+          col_order.each { |k|
+            idx = col_index[k]
+            cols[idx] = cols[idx].to_s.gsub(/N\/A/, "") unless (idx.nil? || cols[idx].nil?)
+            cols[idx] = cols[idx].to_s.gsub(/^\s*|\s*$/, "") unless (idx.nil? || cols[idx].nil?)
+            subid = cols[col_index["Submission ID"]]
+            id = subid.match(/(\d+).*/)[1]
+            if k == "Submission ID" then
+              line.push "#{id}"
+            elsif k == "Replaced by" then
+              map_trail = find_ultimate_id(id,"")
+              line.push(map_trail == id ? "" : map_trail)
+            else
+              line.push cols[idx]
+            end
+          }
+          f.puts line.join("\t")
+        end
+      }
+    }
+  end
+
   def self.format_amazon_lite(exps, filename = "amazon_lite.csv")
     filename = "amazon_lite.csv" if filename.nil?
     File.open(filename, "w") { |f|
@@ -635,6 +669,67 @@ class Formatter
     }
   end
 
+def self.find_ultimate_id(id, map_trail)
+  if Project.exists? id then
+    p = Project.find(id)
+    #print "#{id}"
+    map_trail = id.to_s
+    if (p.deprecated_project_id.nil?)
+      if (p.superseded_project_id.nil?)
+        #print "\n"
+        map_trail = id.to_s
+        id
+      else
+        #print " --> "
+        map_trail += " --s--> #{find_ultimate_id(p.superseded_project_id,map_trail)}"
+      end
+    else
+      #print " --> "
+      if (p.deprecated_project_id ==0)
+        map_trail += " --> RETRACTED"
+        #puts "RETRACTED"
+      else
+        map_trail += " --d--> #{find_ultimate_id(p.deprecated_project_id,map_trail)}"
+      end
+    end
+    #return (p.superseded_project_id.nil? ? id : find_ultimate_id(p.superseded_project_id))
+  else 
+    map_trail += "#{id} does not exist"
+    #puts "#{id} does not exist"
+  end
+end
+
+def self.format_replacements(exps, filename = "replacement_mapping.txt")
+  header = ["Submission ID", "Submission Name", "PI", "Replaced by", "Reason"]
+  File.open(filename, "w") { |f|
+    f.puts header.join("\t")
+    exps.each { |e|
+      cols = Array.new
+      id = e["xschema"].match(/_(\d+)_/)[1]
+      cols.push id
+      map_trail = ""
+      map_reason = ""
+      #TODO: loop here to follow trail of supersession/deprecation
+      if (e["retracted"] ||  e["deprecated"] == "0") then
+        map_trail = "RETRACTED"
+      else 
+        if  e["deprecated"] then
+          map_trail += " deprecated_by #{e["deprecated"]}" 
+        end
+        if e["superseded"] then
+          map_trail += " superseded_by #{e["superseded"]}" 
+        end
+      end
+      map_trail = find_ultimate_id(id,"")
+      cols.push e["uniquename"]
+      cols.push e["project"]
+      cols.push(map_trail == id.to_s ? "" : map_trail) 
+      cols.push e["change_reason"]
+      f.puts cols.join("\t")
+    }
+  }
+end
+
 def self.format_read_counts (exps, filename = "read_counts.csv")   
   File.open(filename, "w") { |f|    
   header = true
@@ -700,6 +795,7 @@ end
         blocks.push(min == max ? "embryonic stage #{min}" : "embryonic stage #{min}-#{max}") if min > 0
         stage = blocks.join(", ")
       end
+      #stages=(stage =~ /embryo|cleavage|blastoderm|gastrula|germ band|egg/)? [embryo]
       if ((stage =~ /embryo|cleavage|blastoderm|gastrula|germ band|egg/) && (stage =~ /larva|(L\d+)|prepupa|dauer|pupa|P[3-9]|adult/)) then
         stage = "mixed: " + stage
       elsif stage =~ /embryo|cleavage|blastoderm|gastrula|germ band|egg/ then

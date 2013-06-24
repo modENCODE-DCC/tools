@@ -256,7 +256,7 @@ def get_submission_status (exps, dbh)
   # Also, grab creation and release dates
 
   print "  Looking up submission status." ; $stdout.flush
-  sth = dbh.prepare("SELECT status, deprecated_project_id, superseded_project_id, created_at, updated_at FROM projects WHERE id = ?")
+  sth = dbh.prepare("SELECT status, deprecated_project_id, superseded_project_id, created_at, updated_at, supercession_reason, deprecation_reason FROM projects WHERE id = ?")
   sth_release_date = dbh.prepare("SELECT MAX(c.end_time) AS release_date FROM commands c 
                                  INNER JOIN projects p ON p.id = c.project_id 
                                  WHERE c.type = 'Release' AND c.status = 'released' GROUP BY p.id HAVING p.id = ?")                                
@@ -264,7 +264,7 @@ def get_submission_status (exps, dbh)
                                    print "." ; $stdout.flush
                                    pipeline_id = e["xschema"].match(/_(\d+)_/)[1].to_i
                                    sth.execute(pipeline_id)
-                                   (status, deprecated, superseded, created_at, updated_at) = sth.fetch_array
+                                   (status, deprecated, superseded, created_at, updated_at, supercession_reason, deprecation_reason) = sth.fetch_array
                                    if status.nil? then
                                      # Chado entry, but deleted from pipeline
                                      exps.delete(e)
@@ -273,6 +273,12 @@ def get_submission_status (exps, dbh)
                                    e["status"] = status
                                    e["deprecated"] = (deprecated != "" && !deprecated.nil?) ? deprecated : false
                                    e["superseded"] = (superseded != "" && !superseded.nil?) ? superseded : false
+                                   if e["deprecated"] then
+                                     e["change_reason"] = deprecation_reason.nil? ? "UNSPECIFIED" : deprecation_reason
+                                   end
+                                   if e["superseded"] then
+                                     e["change_reason"] = supercession_reason.nil? ? "UNSPECIFIED" : supercession_reason
+                                   end
                                    sth_release_date.execute(pipeline_id)
                                    release_date = sth_release_date.fetch_array
                                    release_date = release_date.nil? ? updated_at : release_date[0]
@@ -2119,7 +2125,6 @@ r.set_schema("reporting")
 
 puts "Initializing pipeline database connection"
 dbinfo = pipeline_database
-#dbh = DBI.connect("dbi:Pg:dbname=pipeline_dev;host=modencode-db1;port=5432", "db_public", "pw")
 dbh = DBI.connect(dbinfo[:dsn], dbinfo[:user], dbinfo[:password]) 
 
 #############################

@@ -20,8 +20,8 @@ echo "**************************  MAKE AMAZON REPORT  **************************
 time GEM_HOME=/var/www/gems/ /modencode/raw/tools/reporter/make_report.rb amazon_tagging "$amazon_filename" -b >>"$logfile" 2>&1
 
 echo "*****************************  MOVE FILES  ***************************************"
-mkdir -v /modencode/raw/tools/reporter/bps.$today >>"$logfile" 2>&1
-mv -v /modencode/raw/tools/reporter/breakpoint*.dmp /modencode/raw/tools/reporter/bps.$today/ >>"$logfile" 2>&1
+mkdir -v /modencode/raw/tools/reporter/breakpoints/bps.$today >>"$logfile" 2>&1
+mv -v /modencode/raw/tools/reporter/breakpoint*.dmp /modencode/raw/tools/reporter/breakpoints/bps.$today/ >>"$logfile" 2>&1
 
 echo "Logs for this cron can be found in ${logfile}"
 echo "******************************  FINISHED  ****************************************"
