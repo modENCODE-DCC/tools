@@ -758,8 +758,12 @@ def process_specimens(exps, r)
       if sp["type"] =~ /modencode:ShortReadArchive_project_ID \(SRA\)/ then
         e["sra_ids"].push sp["value"]
       elsif sp["type"] =~ /modencode:ShortReadArchive_project_ID_list \(SRA\)/ then
-        sra_ids = sp["value"].split(/;/).map { |id| id.match(/^(SRA[^\.])*\./)[1] }
+        # Get the 'integer part' of an SRR/SRA ID.
+        # Maps SRA12345.123.456 to SRA12345, for example. Or SRR12345 to SRR12345
+        sra_ids = sp["value"].split(/;/).map { |id| id_match = id.match(/^(SR[AR][^\.]+)\.?/)
+                                                    (id_match.nil?)? "" : id_match[1] }
         sra_ids.uniq!
+        sra_ids.reject!{|id| id.empty?}
         puts "Got: #{sra_ids.join(";")}"
         e["sra_ids"].push sra_ids
       end
