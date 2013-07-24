@@ -1,0 +1,7 @@
+
+Script for mirroring all geoid_updates.marshal files on the upload ftp site
+for easy access by Sergio.
+
+Run as a cron job daily or weekly.
+
+
